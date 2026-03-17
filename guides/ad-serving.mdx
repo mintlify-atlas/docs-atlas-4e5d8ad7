@@ -1,0 +1,258 @@
+---
+title: "Ad Serving"
+description: "How the SDK fetches, renders, and tracks ads — from the GET /api/sdk/ads request to impression and click events."
+keywords: ["ads", "ad serving", "impression", "click", "AdDialog", "callback"]
+---
+
+Once the PIN verification flow is complete (or when PIN is disabled), `AdLoader` fetches the highest-priority active ad and displays it in a `Dialog`. This page explains every step of that process.
+
+## Fetching ads
+
+`AdLoader.fetchAndShowAds()` triggers a `GET /api/sdk/ads` request. `AdClient` adds the `x-api-key` header automatically on every request:
+
+```java AdClient.java
+private String get(String path) throws Exception {
+    URL url = new URL(baseUrl + path);
+    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+    conn.setRequestMethod("GET");
+    conn.setRequestProperty("x-api-key", apiKey);
+    conn.setRequestProperty("Content-Type", "application/json");
+    conn.setConnectTimeout(10_000);
+    conn.setReadTimeout(10_000);
+    return readResponse(conn);
+}
+```
+
+The server queries only ads where `isActive = true` for the authenticated API key, ordered by `priority` descending:
+
+```typescript sdk.service.ts
+async getAds(apiKeyId: number) {
+  return prisma.ad.findMany({
+    where: { apiKeyId, isActive: true },
+    select: {
+      id: true,
+      title: true,
+      description: true,
+      imageUrl: true,
+      redirectUrl: true,
+      adType: true,
+      buttonText: true,
+      priority: true,
+    },
+    orderBy: { priority: 'desc' },
+  });
+}
+```
+
+The response shape:
+
+```json
+{
+  "ads": [
+    {
+      "id": 42,
+      "title": "Try PremiumApp Pro",
+      "description": "Unlock all features for free for 7 days.",
+      "imageUrl": "https://cdn.example.com/banner.jpg",
+      "redirectUrl": "https://example.com/promo",
+      "adType": "interstitial",
+      "buttonText": "Get It Free",
+      "priority": 10
+    }
+  ]
+}
+```
+
+## Ad selection
+
+The SDK always displays the **first** ad in the array — the one with the highest `priority`:
+
+```java AdLoader.java
+private void fetchAndShowAds() {
+    client.fetchAds(new AdClient.Callback<Ad[]>() {
+        @Override
+        public void onSuccess(Ad[] ads) {
+            if (ads.length == 0) {
+                if (callback != null) callback.onError("No ads available");
+                return;
+            }
+            showAd(ads[0]);
+        }
+    });
+}
+```
+
+<Note>
+  If no active ads exist for the API key, `onError("No ads available")` is called on your `AdVerifyCallback`. The dialog is not shown.
+</Note>
+
+## Impression tracking
+
+Before the dialog is shown, the SDK records the impression with a fire-and-forget POST:
+
+```java AdLoader.java
+private void showAd(Ad ad) {
+    if (activity.isFinishing()) return;
+
+    client.trackImpression(ad.id);  // POST /api/sdk/impression
+
+    AdDialog dialog = new AdDialog(activity, ad, listener);
+    dialog.show();
+    if (callback != null) callback.onAdShown();
+}
+```
+
+```java AdClient.java
+public void trackImpression(int adId) {
+    executor.execute(() -> {
+        try {
+            JSONObject body = new JSONObject();
+            body.put("adId", adId);
+            post("/api/sdk/impression", body.toString());
+        } catch (Exception e) {
+            Log.e(TAG, "Track impression failed", e);
+        }
+    });
+}
+```
+
+Request body: `{ "adId": 42 }`. The server creates an `Impression` record linked to the ad, API key, and device ID.
+
+## Ad rendering
+
+`AdDialog` builds the entire UI programmatically — no XML layouts, no external dependencies.
+
+**Image loading** runs on a background thread via `HttpURLConnection`:
+
+```java AdDialog.java
+private void loadImage(String imageUrl, ImageView imageView) {
+    new Thread(() -> {
+        try {
+            HttpURLConnection conn = (HttpURLConnection) new URL(imageUrl).openConnection();
+            conn.setConnectTimeout(5000);
+            conn.setReadTimeout(5000);
+            conn.setDoInput(true);
+            conn.connect();
+            if (conn.getResponseCode() == HttpURLConnection.HTTP_OK) {
+                InputStream is = conn.getInputStream();
+                Bitmap bitmap = BitmapFactory.decodeStream(is);
+                is.close();
+                conn.disconnect();
+                if (bitmap != null) {
+                    activity.runOnUiThread(() -> imageView.setImageBitmap(bitmap));
+                }
+            }
+        } catch (Exception ignored) {}
+    }).start();
+}
+```
+
+The image is displayed at `160 dp` height with `CENTER_CROP` scaling and a `#eeeeee` placeholder background while loading.
+
+**Content area** below the image contains:
+- `ad.title` — 17 sp bold, `#111111`
+- `ad.description` — 13 sp, `#888888`, line spacing ×1.35 (omitted if empty)
+- A `#f2f2f2` divider
+- A **Close** text button (grey, dismisses the dialog)
+- A CTA button using `ad.buttonText` — solid `#111111`, opens `ad.redirectUrl` in the browser
+
+The entire dialog enters with a 200 ms fade + 0.95→1.0 scale animation.
+
+## Click tracking
+
+When the user taps the CTA button, `AdDialog` fires `onClicked(ad.redirectUrl)` on its listener. `AdLoader` then calls `client.trackClick(ad.id)` before forwarding the event to your `AdVerifyCallback`:
+
+```java AdLoader.java
+AdDialog dialog = new AdDialog(activity, ad, new AdDialog.AdDialogListener() {
+    @Override
+    public void onClicked(String url) {
+        client.trackClick(ad.id);  // POST /api/sdk/click
+        if (callback != null) callback.onAdClicked(url);
+    }
+
+    @Override
+    public void onClosed() {
+        if (callback != null) callback.onAdClosed();
+    }
+});
+```
+
+Request body: `{ "adId": 42 }`. The server creates a `Click` record linked to the ad, API key, and device ID.
+
+## The AdVerifyCallback lifecycle
+
+Pass an `AdVerifyCallback` to `AdVerify.show()` to react to ad events:
+
+```java
+AdVerify.show(activity, new AdVerifyCallback() {
+
+    @Override
+    public void onAdShown() {
+        // The AdDialog is now visible.
+        // Pause background music, pause timers, etc.
+    }
+
+    @Override
+    public void onAdClicked(String url) {
+        // User tapped the CTA button.
+        // url is the ad's redirectUrl.
+        // The browser has already been opened.
+    }
+
+    @Override
+    public void onAdClosed() {
+        // User dismissed the dialog (Close button or back gesture).
+        // Resume whatever you paused in onAdShown.
+    }
+
+    @Override
+    public void onError(String message) {
+        // Network error, no ads available, PIN attempts exceeded, etc.
+        Log.w("MyApp", "AdVerify error: " + message);
+    }
+});
+```
+
+Event order for a successful flow with a click:
+
+```
+onAdShown → onAdClicked → onAdClosed
+```
+
+Event order when the user closes without clicking:
+
+```
+onAdShown → onAdClosed
+```
+
+## Configuring ads
+
+Ads are created in the admin panel under **Ads**. The fields map directly to the model fields the SDK receives:
+
+| Field | Type | Description |
+|---|---|---|
+| `title` | string | Main heading shown in the dialog. |
+| `description` | string | Optional body text below the title. |
+| `imageUrl` | string | HTTPS URL of the banner image (displayed at 160 dp height). |
+| `redirectUrl` | string | URL opened in the browser when the CTA button is tapped. |
+| `buttonText` | string | Label for the CTA button (e.g. `"Get It Free"`). |
+| `adType` | string | Currently `interstitial` — reserved for future ad formats. |
+| `priority` | integer | Higher numbers are served first. |
+| `isActive` | boolean | Inactive ads are excluded from the `GET /api/sdk/ads` response entirely. |
+
+<Tip>
+  Set `priority` to differentiate campaigns. Ads with equal priority are served in database insertion order.
+</Tip>
+
+## When no ads are available
+
+If `GET /api/sdk/ads` returns an empty `ads` array, `AdLoader` calls `callback.onError("No ads available")` and exits silently. No dialog is shown. You can use `onError` to log the event or show your own UI:
+
+```java
+@Override
+public void onError(String message) {
+    if ("No ads available".equals(message)) {
+        // Proceed normally — nothing to show
+    }
+}
+```

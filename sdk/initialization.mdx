@@ -1,0 +1,155 @@
+---
+title: "Initialization"
+description: "Initialize the AdVerify SDK and show ads using init() + show() or the combined start() method."
+---
+
+The SDK exposes two initialization patterns. Choose the one that fits how your app is structured.
+
+<CardGroup cols={2}>
+  <Card title="init() + show()" icon="layers">
+    Separate calls — best for apps that have an `Application` class.
+  </Card>
+  <Card title="start()" icon="bolt">
+    Combined single call — best for MT Manager smali injection or simple apps.
+  </Card>
+</CardGroup>
+
+## Pattern 1: init() + show()
+
+Call `init()` once when your app starts, then call `show()` from any `Activity` when you want to display an ad.
+
+<Steps>
+  <Step title="Initialize in Application.onCreate()">
+    ```java MyApplication.java
+    import com.adverify.sdk.AdVerify;
+
+    public class MyApplication extends Application {
+        @Override
+        public void onCreate() {
+            super.onCreate();
+            AdVerify.init(this, "YOUR_API_KEY", "https://your-server.com");
+        }
+    }
+    ```
+
+    Register the class in `AndroidManifest.xml`:
+
+    ```xml AndroidManifest.xml
+    <application
+        android:name=".MyApplication"
+        ... >
+    ```
+  </Step>
+
+  <Step title="Show an ad from an Activity">
+    ```java MainActivity.java
+    import com.adverify.sdk.AdVerify;
+
+    public class MainActivity extends AppCompatActivity {
+        @Override
+        protected void onCreate(Bundle savedInstanceState) {
+            super.onCreate(savedInstanceState);
+            setContentView(R.layout.activity_main);
+
+            AdVerify.show(this);
+        }
+    }
+    ```
+  </Step>
+
+  <Step title="Optionally pass a callback">
+    ```java MainActivity.java
+    import com.adverify.sdk.AdVerify;
+    import com.adverify.sdk.AdVerifyCallback;
+
+    AdVerify.show(this, new AdVerifyCallback() {
+        @Override public void onAdShown() { /* ad dialog appeared */ }
+        @Override public void onAdClosed() { /* user dismissed */ }
+        @Override public void onAdClicked(String redirectUrl) { /* user tapped CTA */ }
+        @Override public void onError(String message) { /* something went wrong */ }
+    });
+    ```
+
+    See [AdVerifyCallback](/sdk/callback) for full details on each method.
+  </Step>
+</Steps>
+
+## Pattern 2: start()
+
+Combines initialization and display into a single static call. Two overloads are available:
+
+### start(Activity) — reads credentials from manifest
+
+```java
+public static void start(Activity activity)
+```
+
+Reads `adverify.api_key` and `adverify.base_url` from `AndroidManifest.xml` meta-data (defaults to `https://ads.paidappstore.com` if `base_url` is not set). Use this overload when credentials are embedded in the manifest.
+
+```java MainActivity.java
+import com.adverify.sdk.AdVerify;
+
+protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    AdVerify.start(this);
+    setContentView(R.layout.activity_main);
+}
+```
+
+### start(Activity, String, String) — explicit credentials
+
+```java
+public static void start(Activity activity, String apiKey, String baseUrl)
+```
+
+Passes credentials directly — no manifest meta-data required.
+
+```java MainActivity.java
+AdVerify.start(this, "YOUR_API_KEY", "https://your-server.com");
+```
+
+<Note>
+  Both `start()` overloads also call `activity.getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE)`, which blocks screenshots and screen recording for the duration of the activity.
+</Note>
+
+## Method signatures
+
+### AdVerify.init()
+
+```java AdVerify.java
+public static void init(Context context, String apiKey, String baseUrl)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `context` | `Context` | Any `Context` — used to read `ANDROID_ID` as the device identifier. |
+| `apiKey` | `String` | Your API key from the admin dashboard. Must not be null or empty. |
+| `baseUrl` | `String` | Base URL of your AdVerify server. Trailing slashes are stripped automatically. |
+
+Throws `IllegalArgumentException` if `apiKey` or `baseUrl` is null or empty.
+
+The device ID is auto-detected from `Settings.Secure.ANDROID_ID` and is sent to the server on every `init` call to identify the device.
+
+### AdVerify.show()
+
+```java AdVerify.java
+public static void show(Activity activity)
+public static void show(Activity activity, AdVerifyCallback callback)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `activity` | `Activity` | The currently visible activity. The SDK checks `activity.isFinishing()` before showing any UI. |
+| `callback` | `AdVerifyCallback` | Optional listener for ad lifecycle events. Pass `null` to ignore events. |
+
+Throws `IllegalStateException` if `AdVerify.init()` has not been called first.
+
+## Error states
+
+| Condition | Result |
+|-----------|--------|
+| `apiKey` is null or empty | `IllegalArgumentException` thrown from `init()` |
+| `show()` called before `init()` | `IllegalStateException` thrown with message `"AdVerify.init() must be called before show()"` |
+| `activity` is null or finishing | `callback.onError("Activity is null or finishing")` called; no dialog shown |
+| Server unreachable | `callback.onError(message)` called with the HTTP error detail |
+| No ads available | `callback.onError("No ads available")` called |

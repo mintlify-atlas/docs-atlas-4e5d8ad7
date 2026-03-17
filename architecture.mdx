@@ -1,0 +1,281 @@
+---
+title: "Architecture"
+description: "How the Android SDK, Express server, PostgreSQL database, and Next.js admin dashboard fit together."
+---
+
+AdVerify is built from three independently deployable components that communicate through a single Express REST API. This page explains each component, how data flows between them, and the database schema that ties everything together.
+
+## System diagram
+
+```
+┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐
+│   Android App    │────>│   Express API    │<────│   Admin Panel    │
+│   (SDK inside)   │     │   (Server)       │     │   (Next.js)      │
+└──────────────────┘     └──────────────────┘     └──────────────────┘
+                                  │
+                          ┌───────┴───────┐
+                          │   PostgreSQL   │
+                          │   (Prisma)     │
+                          └───────────────┘
+```
+
+The Android SDK and the admin panel never communicate directly. All reads and writes go through the Express API, which is the sole owner of the database.
+
+## Components
+
+### Android SDK
+
+The SDK lives in `android-sdk/adverify/src/main/java/com/adverify/sdk/` and exposes a single public class: `AdVerify`.
+
+**Public surface:**
+
+| Method | Description |
+|--------|-------------|
+| `AdVerify.init(Context, String, String)` | Initialise with API key and server base URL. Must be called before `show()`. |
+| `AdVerify.show(Activity)` | Run the full flow: init check → optional PIN dialog → ad dialog. |
+| `AdVerify.show(Activity, AdVerifyCallback)` | Same as above with lifecycle callbacks. |
+| `AdVerify.start(Activity)` | MT Manager mode — reads config from manifest meta-data, then calls `show()`. |
+| `AdVerify.start(Activity, String, String)` | MT Manager mode with explicit params. |
+
+All UI is rendered programmatically with Android's `Canvas`, `Paint`, `Path`, and `GradientDrawable` APIs. There are no external library dependencies.
+
+**Internal structure:**
+
+<Tree>
+  <Tree.Folder name="com.adverify.sdk" defaultOpen>
+    <Tree.File name="AdVerify.java" />
+    <Tree.File name="AdLoader.java" />
+    <Tree.File name="PinVerifyDialog.java" />
+    <Tree.File name="AdDialog.java" />
+    <Tree.File name="JoinDialog.java" />
+    <Tree.Folder name="internal" defaultOpen>
+      <Tree.File name="AdClient.java" />
+      <Tree.Folder name="models" defaultOpen>
+        <Tree.File name="InitResponse.java" />
+        <Tree.File name="Ad.java" />
+        <Tree.File name="PinInfoItem.java" />
+        <Tree.File name="JoinLink.java" />
+      </Tree.Folder>
+    </Tree.Folder>
+  </Tree.Folder>
+</Tree>
+
+`AdLoader` orchestrates the entire flow. `AdClient` is the internal HTTP client that talks to the server using `HttpURLConnection`.
+
+### Express server
+
+The server (`server/src/app.ts`) is a TypeScript Express application mounted at three route prefixes:
+
+| Prefix | Purpose |
+|--------|---------|
+| `/api/sdk/*` | Called by the Android SDK at runtime |
+| `/api/admin/*` | Called by the Next.js admin panel |
+| `/api/admin/patch/*` | APK patching utilities |
+
+**Route structure:**
+
+```
+server/src/
+├── app.ts               # Express bootstrap, CORS, route mounting
+├── config/
+│   └── env.ts           # Environment variable validation
+├── routes/
+│   ├── sdk.routes.ts
+│   ├── admin.routes.ts
+│   ├── patcher.routes.ts
+│   └── health.routes.ts
+├── controllers/         # Route handlers — parse request, call service, return response
+├── services/            # Business logic — sdk.service.ts owns all SDK endpoint logic
+└── middleware/          # Auth (x-api-key validation), rate limiting
+```
+
+All SDK endpoints require the `x-api-key` request header. The middleware validates the key against the `ApiKey` table before the request reaches a controller.
+
+**SDK API endpoints:**
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/sdk/init` | POST | Check device PIN status, return app config |
+| `/api/sdk/verify-pin` | POST | Validate a PIN for a device |
+| `/api/sdk/create-link` | POST | Create a shortener link for PIN generation |
+| `/api/sdk/ads` | GET | Fetch active ads for the API key |
+| `/api/sdk/impression` | POST | Record an ad impression |
+| `/api/sdk/click` | POST | Record an ad click |
+
+### Next.js admin panel
+
+The admin panel (`web/app/(panel)/`) uses the Next.js App Router. Each section maps to a group of admin API endpoints:
+
+| Panel section | Purpose |
+|---------------|---------|
+| `dashboard/` | Aggregate impression and click stats |
+| `keys/` | Create, activate, and revoke API keys |
+| `ads/` | Upload ad creatives, set priority and button text |
+| `pin/` | Configure PIN enabled state, expiry mode, messages |
+| `user-pins/` | Browse and search verified devices |
+| `mt-manager/` | DEX/smali integration guide |
+
+## SDK flow
+
+The complete sequence from app launch to ad shown:
+
+```
+App Launch
+    │
+    ▼
+SDK calls /api/sdk/init with deviceId
+    │
+    ├── pinEnabled=false OR pinVerified=true
+    │       → Fetch and show ads directly
+    │
+    └── pinEnabled=true AND pinVerified=false
+            → Show PIN Verification Dialog
+                │
+                ├── "Generate PIN & Verify" button
+                │       → Server creates shortener link
+                │       → Opens browser (user views articles/ads)
+                │       → User receives PIN
+                │       → Dialog switches to PIN entry state
+                │
+                ├── "Tutorial" button → Opens tutorial URL
+                ├── "Join Us" button → Shows community links dialog
+                └── "Exit" button → Closes app
+                │
+                ▼
+            User enters PIN → /api/sdk/verify-pin
+                │
+                ├── Valid → Dismiss dialog → Show ads
+                └── Invalid → Show error + remaining attempts
+```
+
+Once the PIN check passes (or is skipped), `AdLoader` calls `GET /api/sdk/ads`, picks the first result, posts an impression to `/api/sdk/impression`, and shows `AdDialog`. When the user taps the ad, a click is posted to `/api/sdk/click`.
+
+## PIN expiry modes
+
+PIN expiry is configured per API key in the `PinConfig` table and enforced by the server on every `/api/sdk/init` call:
+
+| Mode | `expiryMode` value | Behavior |
+|------|-------------------|----------|
+| Permanent | `never` | Once verified, the device stays verified indefinitely. `expiresAt` is `null` in `UserPin`. |
+| Time-limited | `duration` | Verification expires after `expiryHours` hours (default: 24). When expired, the `UserPin` record is deleted and the user sees the PIN dialog again on next launch. |
+
+## Database models
+
+All models are defined in `server/prisma/schema.prisma` and managed by Prisma ORM against a PostgreSQL database.
+
+<AccordionGroup>
+
+<Accordion title="ApiKey">
+
+Represents one Android app. Every other model is scoped to an `ApiKey`.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | `Int` | Auto-increment primary key |
+| `key` | `String` | Unique API key string sent in `x-api-key` header |
+| `appName` | `String` | Human-readable app name |
+| `packageName` | `String` | Android package name |
+| `isActive` | `Boolean` | Inactive keys are rejected by middleware |
+| `createdAt` | `DateTime` | Creation timestamp |
+
+</Accordion>
+
+<Accordion title="Ad">
+
+An ad creative belonging to an `ApiKey`.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | `Int` | Auto-increment primary key |
+| `apiKeyId` | `Int` | FK → `ApiKey` |
+| `title` | `String` | Ad headline |
+| `description` | `String` | Body text |
+| `imageUrl` | `String` | Remote image URL loaded by `AdDialog` |
+| `redirectUrl` | `String` | Destination when user taps the ad |
+| `adType` | `String` | Currently `"interstitial"` |
+| `buttonText` | `String` | CTA button label (default: `"Visit Now"`) |
+| `isActive` | `Boolean` | Only active ads are returned to the SDK |
+| `priority` | `Int` | Higher priority ads are served first |
+
+</Accordion>
+
+<Accordion title="PinConfig">
+
+One-to-one with `ApiKey`. Controls the PIN verification behaviour for that app.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `pinEnabled` | `Boolean` | Whether PIN gating is active |
+| `pinMessage` | `String` | Message shown on the PIN dialog |
+| `maxAttempts` | `Int` | Failed attempts before lockout (default: 3) |
+| `getPinBtnText` | `String` | Label on the "get PIN" button |
+| `enterPinBtnText` | `String` | Label on the "enter PIN" button |
+| `expiryMode` | `String` | `"never"` or `"duration"` |
+| `expiryHours` | `Int` | Hours until expiry when `expiryMode = "duration"` |
+| `tutorialUrl` | `String` | URL opened when user taps Tutorial |
+| `pinInfoItems` | `Json` | Array of icon/text items shown on the PIN dialog |
+| `joinLinks` | `Json` | Community links shown in the Join dialog |
+
+</Accordion>
+
+<Accordion title="UserPin">
+
+One record per device per API key. Created when a user generates a PIN link, updated when the PIN is successfully verified.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `deviceId` | `String` | Android `ANDROID_ID` of the device |
+| `pin` | `String` | The PIN value |
+| `isUsed` | `Boolean` | `true` after successful verification |
+| `createdAt` | `DateTime` | When the PIN was generated |
+| `usedAt` | `DateTime?` | When the PIN was first used |
+| `expiresAt` | `DateTime?` | `null` for `never` mode; set for `duration` mode |
+
+The table has a unique index on `(apiKeyId, deviceId, pin)` and a non-unique index on `(apiKeyId, deviceId)` for fast lookups on init.
+
+</Accordion>
+
+<Accordion title="Impression and Click">
+
+Append-only event tables. Each row is one impression or click event.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `adId` | `Int` | FK → `Ad` |
+| `apiKeyId` | `Int` | FK → `ApiKey` |
+| `deviceId` | `String` | `ANDROID_ID` of the device |
+| `createdAt` | `DateTime` | Event timestamp |
+
+Both tables cascade-delete when the parent `Ad` or `ApiKey` is removed.
+
+</Accordion>
+
+<Accordion title="GlobalSettings">
+
+A single-row table (id = 1) that controls cross-app PIN unlock behaviour.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `pinUnlockMode` | `String` | `"per_app"`, `"global"`, or `"global_except"` |
+| `excludedAppIds` | `Int[]` | `ApiKey` IDs excluded from global unlock |
+
+</Accordion>
+
+</AccordionGroup>
+
+## Next steps
+
+<Columns cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Deploy the server and run your first end-to-end flow.
+  </Card>
+  <Card title="SDK initialization" icon="android" href="/sdk/initialization">
+    Full reference for `AdVerify.init()`, `show()`, and `start()`.
+  </Card>
+  <Card title="Server setup" icon="server" href="/server/setup">
+    Environment variables, database configuration, and deployment options.
+  </Card>
+  <Card title="API reference" icon="code" href="/api/sdk/init">
+    Request and response schemas for all SDK endpoints.
+  </Card>
+</Columns>

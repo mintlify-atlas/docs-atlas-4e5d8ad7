@@ -1,0 +1,63 @@
+---
+title: 'Track Click'
+description: 'Record that the user tapped the action button on an ad.'
+api: 'POST /api/sdk/click'
+---
+
+<Note>
+  Requires `x-api-key` header.
+</Note>
+
+Call this endpoint when the user taps the ad's action button (the button labeled with `buttonText`). The server creates a `Click` record in the database. Click data is available alongside impression data in the admin dashboard.
+
+## When to call
+
+The Android SDK calls this endpoint in the `AdDialog` button click handler, immediately before opening `redirectUrl` in the browser. Call it once per button tap.
+
+## Request
+
+### Headers
+
+<ParamField header="x-api-key" type="string" required>
+  Your app API key.
+</ParamField>
+
+### Body
+
+<ParamField body="adId" type="number" required>
+  The `id` of the ad whose button was tapped. Use the value returned by `/api/sdk/ads`.
+</ParamField>
+
+<ParamField body="deviceId" type="string">
+  The Android device identifier. Recommended for accurate per-device analytics, but optional.
+</ParamField>
+
+## Response
+
+Returns HTTP `200` with a status confirmation object.
+
+<ResponseField name="status" type="string">
+  Always `"ok"` on success.
+</ResponseField>
+
+<RequestExample>
+
+```bash cURL
+curl --request POST \
+  --url https://your-server.example.com/api/sdk/click \
+  --header 'x-api-key: YOUR_API_KEY' \
+  --header 'Content-Type: application/json' \
+  --data '{"adId": 42, "deviceId": "a1b2c3d4e5f6"}'
+```
+
+</RequestExample>
+
+<ResponseExample>
+
+```json 200
+{
+  "status": "ok"
+}
+```
+
+</ResponseExample>

@@ -1,0 +1,191 @@
+---
+title: "MT Manager / Smali Injection"
+description: "Inject the AdVerify SDK into any Android APK using MT Manager and smali patching — no source code access required."
+---
+
+MT Manager patching lets you add AdVerify to an existing APK without modifying source code. You inject a prebuilt DEX file and add three smali lines to the launcher `Activity`'s `onCreate()` method.
+
+## How it works
+
+1. The SDK is compiled into a standalone `adverify.dex` file.
+2. The DEX is added to the APK alongside the app's existing `classes.dex`.
+3. Three smali lines call `AdVerify.start()` at app launch — the SDK handles initialization, PIN verification (if enabled), and ad display from that single call.
+4. `FLAG_SECURE` is set on the window, blocking screenshots and screen recording for the session.
+
+## Build the DEX
+
+The build script compiles all Java sources and converts them to a DEX using `d8`. It requires **Android SDK Platform 34** and **Build-Tools 34**.
+
+```bash build-dex.sh
+#!/bin/bash
+# Build adverify.dex for MT Manager integration
+# No Gradle needed — uses javac + d8 directly
+
+set -e
+cd "$(dirname "$0")"
+
+SDK_DIR="$HOME/Library/Android/sdk"
+ANDROID_JAR="$SDK_DIR/platforms/android-34/android.jar"
+D8="$SDK_DIR/build-tools/34.0.0/d8"
+SRC_DIR="adverify/src/main/java"
+OUT_DIR="out"
+BUILD_DIR="$OUT_DIR/classes"
+
+# Compile all Java sources
+find "$SRC_DIR" -name "*.java" > "$OUT_DIR/sources.txt"
+javac \
+    --release 11 \
+    -classpath "$ANDROID_JAR" \
+    -d "$BUILD_DIR" \
+    @"$OUT_DIR/sources.txt"
+
+# Convert to DEX
+jar cf "$OUT_DIR/adverify.jar" -C "$BUILD_DIR" .
+"$D8" --lib "$ANDROID_JAR" --output "$OUT_DIR" "$OUT_DIR/adverify.jar"
+mv "$OUT_DIR/classes.dex" "$OUT_DIR/adverify.dex"
+```
+
+Run it from the `android-sdk/` directory:
+
+```bash
+chmod +x build-dex.sh
+./build-dex.sh
+# Output: out/adverify.dex
+```
+
+## Smali hook variants
+
+Choose the variant that matches how you want to supply credentials.
+
+<Tabs>
+  <Tab title="Explicit credentials">
+    Pass the API key and server URL directly as string constants. This is the most common approach.
+
+    ```smali
+    const-string v0, "YOUR_API_KEY"
+
+    const-string v1, "YOUR_SERVER_URL"
+
+    invoke-static {p0, v0, v1}, Lcom/adverify/sdk/AdVerify;->start(Landroid/app/Activity;Ljava/lang/String;Ljava/lang/String;)V
+    ```
+
+    This calls:
+
+    ```java AdVerify.java
+    public static void start(Activity activity, String apiKey, String baseUrl)
+    ```
+
+    <Warning>
+      This variant requires `.locals` to be **at least 2** so that `v0` and `v1` are available. If the method declares `.locals 0` or `.locals 1`, change it to `.locals 2`.
+    </Warning>
+  </Tab>
+
+  <Tab title="Manifest meta-data">
+    Read credentials from `AndroidManifest.xml` — only one smali line needed, zero extra registers.
+
+    ```smali
+    invoke-static {p0}, Lcom/adverify/sdk/AdVerify;->start(Landroid/app/Activity;)V
+    ```
+
+    This calls:
+
+    ```java AdVerify.java
+    public static void start(Activity activity)
+    ```
+
+    You must add the meta-data entries to `AndroidManifest.xml` before rebuilding:
+
+    ```xml AndroidManifest.xml
+    <application ...>
+
+        <meta-data
+            android:name="adverify.api_key"
+            android:value="YOUR_API_KEY" />
+
+        <meta-data
+            android:name="adverify.base_url"
+            android:value="https://your-server.com" />
+
+    </application>
+    ```
+
+    If `adverify.base_url` is absent, the SDK falls back to `https://ads.paidappstore.com`.
+  </Tab>
+</Tabs>
+
+## Full method example
+
+Here is what a patched `onCreate()` method looks like in smali after the hook is inserted:
+
+```smali
+.method protected onCreate(Landroid/os/Bundle;)V
+    .locals 2
+
+    invoke-super {p0, p1}, Landroid/app/Activity;->onCreate(Landroid/os/Bundle;)V
+
+    # --- AdVerify hook start ---
+    const-string v0, "a1b2c3d4e5f6"
+    const-string v1, "https://your-server.com"
+    invoke-static {p0, v0, v1}, Lcom/adverify/sdk/AdVerify;->start(Landroid/app/Activity;Ljava/lang/String;Ljava/lang/String;)V
+    # --- AdVerify hook end ---
+
+    # ... rest of original onCreate code ...
+    return-void
+.end method
+```
+
+`p0` is always `this` (the `Activity` instance) — it is always available without consuming an extra register.
+
+## FLAG_SECURE
+
+Both `start()` overloads set `FLAG_SECURE` on the activity window immediately:
+
+```java AdVerify.java
+activity.getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
+```
+
+This prevents the system from taking screenshots or recording the screen while the activity is active. It applies for the entire lifetime of the activity, not just during ad display.
+
+## Step-by-step patching workflow
+
+<Steps>
+  <Step title="Build adverify.dex">
+    Run `./build-dex.sh` from the `android-sdk/` directory. Verify `out/adverify.dex` exists.
+  </Step>
+
+  <Step title="Open the APK in MT Manager">
+    Long-press the APK file in MT Manager and select **Open with MT Manager**. Then open the **Dex Editor**.
+  </Step>
+
+  <Step title="Add adverify.dex">
+    Import `adverify.dex` into the APK. MT Manager will add it as an additional dex file (`classes2.dex` or higher).
+  </Step>
+
+  <Step title="Edit AndroidManifest.xml">
+    Add the `INTERNET` permission inside `<manifest>`:
+
+    ```xml
+    <uses-permission android:name="android.permission.INTERNET" />
+    ```
+
+    If your server uses HTTP, also add `android:usesCleartextTraffic="true"` to `<application>`.
+
+    If you are using the manifest meta-data variant, add the `adverify.api_key` and `adverify.base_url` meta-data entries inside `<application>`.
+  </Step>
+
+  <Step title="Find the launcher Activity">
+    Check `AndroidManifest.xml` for the activity with `android.intent.action.MAIN` + `android.intent.category.LAUNCHER`. Navigate to its smali file in the Dex Editor.
+  </Step>
+
+  <Step title="Inject the smali hook">
+    Open the launcher Activity's `.smali` file and locate the `onCreate` method. Insert the hook lines directly after the `invoke-super` call. Ensure `.locals` is at least `2` if using the explicit-credentials variant.
+  </Step>
+
+  <Step title="Rebuild and sign">
+    Save the smali changes, then use MT Manager to rebuild and sign the APK. Install it on a device to verify the SDK activates on launch.
+  </Step>
+</Steps>
+
+<Note>
+  If the SDK logs `"Failed to read meta-data"` in logcat, the meta-data keys are missing or misspelled in `AndroidManifest.xml`. Double-check `adverify.api_key` and `adverify.base_url`.
+</Note>

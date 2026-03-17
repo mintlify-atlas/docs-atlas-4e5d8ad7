@@ -1,0 +1,122 @@
+---
+title: "Configuration"
+description: "Environment variables and runtime configuration for the AdVerify server."
+---
+
+The server reads all configuration from environment variables, validated at startup using Zod. Missing required variables cause the process to exit immediately with a validation error.
+
+## Environment variables
+
+<ParamField path="DATABASE_URL" type="string" required>
+  PostgreSQL connection string in the format `postgresql://user:password@host:port/database`.
+
+  ```
+  DATABASE_URL="postgresql://postgres:secret@localhost:5432/adverify"
+  ```
+</ParamField>
+
+<ParamField path="PORT" type="number" default="3042">
+  Port the Express server listens on.
+</ParamField>
+
+<ParamField path="ADMIN_USERNAME" type="string" default="admin">
+  Username for the admin API. Sent as the username in HTTP Basic Auth.
+</ParamField>
+
+<ParamField path="ADMIN_PASSWORD" type="string" default="admin123">
+  Password for the admin API. Sent as the password in HTTP Basic Auth.
+
+  <Warning>
+    The default value `admin123` is insecure. Set a strong password before deploying.
+  </Warning>
+</ParamField>
+
+<ParamField path="FRONTEND_URL" type="string" default="http://localhost:3000">
+  URL of the admin dashboard. Included in the CORS allowlist so the dashboard can make cross-origin requests.
+</ParamField>
+
+<ParamField path="ALLOWED_ORIGINS" type="string" default="">
+  Comma-separated list of additional origins to allow via CORS. Example:
+
+  ```
+  ALLOWED_ORIGINS=https://dashboard.example.com,https://admin.example.com
+  ```
+</ParamField>
+
+<ParamField path="BASE_URL" type="string" default="https://ads.paidappstore.com">
+  Base URL of this server, used when constructing absolute URLs in responses.
+</ParamField>
+
+<ParamField path="SHORTENER_SECRET" type="string" default="change-me-in-production">
+  Shared secret used when communicating with the link shortener service.
+
+  <Warning>
+    Change this value in production. Any party with this secret can generate verification links.
+  </Warning>
+</ParamField>
+
+<ParamField path="SHORTENER_API_URL" type="string" default="https://api.paidappstore.com">
+  Base URL of the shortener API. The server calls `POST {SHORTENER_API_URL}/api/v1/adverify/create` to generate PIN verification links.
+</ParamField>
+
+<ParamField path="SHORTENER_FRONTEND_URL" type="string" default="https://paidappstore.com">
+  Base URL of the shortener frontend. Verification links are constructed as `{SHORTENER_FRONTEND_URL}/verify/{code}`.
+</ParamField>
+
+## Admin authentication
+
+The admin API (`/api/admin/*`) uses **HTTP Basic Authentication**. Every request must include an `Authorization` header with the credentials encoded in Base64:
+
+```
+Authorization: Basic <base64(username:password)>
+```
+
+The server decodes the header and compares the username and password against `ADMIN_USERNAME` and `ADMIN_PASSWORD`. A mismatch returns `403 Forbidden`.
+
+Example using curl:
+
+```bash
+curl -u admin:your-password http://localhost:3042/api/admin/stats
+```
+
+<Note>
+  The admin dashboard handles this automatically. You only need to construct the header manually when calling the admin API directly.
+</Note>
+
+## SDK authentication
+
+SDK routes (`/api/sdk/*`) use **API key authentication**. Android apps send their API key in the `x-api-key` request header:
+
+```
+x-api-key: <api-key>
+```
+
+The server looks up the key in the database and checks that it is active. An invalid or inactive key returns `403 Forbidden`.
+
+## CORS
+
+The server allows cross-origin requests from:
+
+- Requests with no `Origin` header (mobile apps, `curl`, server-to-server calls)
+- The URL set in `FRONTEND_URL`
+- Any URL listed in `ALLOWED_ORIGINS`
+
+All other origins receive a CORS error. The `credentials: true` option is set, so cookies and authorization headers are forwarded.
+
+## Asset uploads
+
+Ad images are handled by [multer](https://github.com/expressjs/multer). Uploaded files are stored on the server filesystem. Configure disk storage or switch to a cloud provider by modifying the multer configuration in the admin routes.
+
+## Port configuration
+
+The server binds to `0.0.0.0` on the port specified by `PORT` (default `3042`). To run on a different port:
+
+```bash .env
+PORT=8080
+```
+
+Or inline when starting:
+
+```bash
+PORT=8080 npm run dev
+```

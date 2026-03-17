@@ -1,0 +1,72 @@
+---
+title: 'Ad management'
+description: 'Create, configure, and monitor ads served to users through the AdVerify SDK.'
+---
+
+Ads are served to Android devices by the SDK after PIN verification (or immediately if PIN is disabled). Each ad is scoped to a single API key and can be individually enabled, disabled, or deleted.
+
+## Ad fields
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `apiKeyId` | number | Yes | — | ID of the API key (app) this ad belongs to |
+| `title` | string | Yes | — | Headline shown in the ad dialog |
+| `description` | string | No | `""` | Body text shown below the title |
+| `imageUrl` | string | No | `""` | Full URL of the ad image |
+| `redirectUrl` | string | No | `""` | URL opened when the user taps the action button |
+| `adType` | string | No | `"interstitial"` | One of `interstitial`, `banner`, `dialog` |
+| `buttonText` | string | No | `"Visit Now"` | Label on the action button |
+| `priority` | number | No | `0` | Selection priority — higher numbers are preferred |
+| `isActive` | boolean | No | `true` | Whether the ad is served to devices |
+
+## Ad types
+
+| Type | Description |
+|------|-------------|
+| `interstitial` | Full-screen dialog with image, title, description, and action button |
+| `banner` | Compact horizontal banner placement |
+| `dialog` | Modal dialog — similar to interstitial but used for smaller overlay contexts |
+
+## Image hosting
+
+The `imageUrl` field accepts any publicly accessible HTTPS URL. The Android SDK fetches the image using `HttpURLConnection` and renders it at the top of the ad dialog. Use a CDN or static file host that allows cross-origin access.
+
+<Tip>
+Keep images under 500 KB and use a 16:9 or square aspect ratio for the best rendering in `AdDialog`.
+</Tip>
+
+## Priority and ad selection
+
+When the SDK requests ads via `GET /api/sdk/ads`, the server returns active ads for the app ordered by `priority` descending. Ads with a higher `priority` value are served first. Ads with the same priority are ordered by creation date.
+
+Set `priority` between `1` and `10` to control ordering:
+
+- `10` — shown first
+- `1` — shown last among active ads
+- `0` — default, treated as lowest priority
+
+## Creating an ad
+
+1. Navigate to **Ads** in the sidebar.
+2. Click **New Ad**.
+3. Select the **App** (API key) from the dropdown.
+4. Fill in **Title**, **Description**, **Image URL**, and **Redirect URL**.
+5. Choose an **Ad Type**, set **Button Text**, and assign a **Priority**.
+6. Click **Create Ad**.
+
+## Enabling and disabling ads
+
+Click **Disable** or **Enable** on any row to toggle the `isActive` flag. Inactive ads are excluded from the SDK ad response and accumulate no new impressions or clicks.
+
+## Impression and click stats
+
+Each ad row shows its cumulative **Impressions** and **Clicks** counts. These are recorded by the SDK when:
+
+- The ad dialog is displayed → `POST /api/sdk/impression`
+- The user taps the action button → `POST /api/sdk/click`
+
+Aggregate totals across all ads appear on the [Dashboard overview](/dashboard/overview).
+
+## Deleting an ad
+
+Click **Delete** on an ad row and confirm. All `Impression` and `Click` records for that ad are permanently removed via cascade delete.

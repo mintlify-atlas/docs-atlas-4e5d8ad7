@@ -1,0 +1,75 @@
+---
+title: 'Create Verification Link'
+description: 'Generate a shortener link that the user opens to complete the ad-based verification flow and receive a PIN.'
+api: 'POST /api/sdk/create-link'
+---
+
+<Note>
+  Requires `x-api-key` header.
+</Note>
+
+Call this endpoint when the user taps the "Get PIN" button in the PIN verification dialog. The server calls the paidappstore.com shortener API to create a unique verification session, then returns a URL the SDK opens in the device browser.
+
+## How the flow works
+
+1. The SDK calls `/api/sdk/create-link` with the device's `deviceId`.
+2. The server sends the app's API key and `deviceId` to the shortener API at `SHORTENER_API_URL/api/v1/adverify/create`.
+3. The shortener returns a short code. The server constructs the full URL: `SHORTENER_FRONTEND_URL/verify/{code}`.
+4. The SDK opens this URL in the browser. The user views ad pages on the shortener site.
+5. After the user completes the flow, the shortener backend calls `/api/sdk/generate-pin` (server-to-server, authenticated with `SHORTENER_SECRET`) to mint a PIN for the device.
+6. The user sees the PIN on the shortener site and enters it in the SDK dialog.
+
+## Request
+
+### Headers
+
+<ParamField header="x-api-key" type="string" required>
+  Your app API key.
+</ParamField>
+
+### Body
+
+<ParamField body="deviceId" type="string" required>
+  The Android device identifier. Bound to the PIN that will be generated at the end of the verification flow.
+</ParamField>
+
+## Response
+
+<ResponseField name="url" type="string">
+  The full shortener URL to open in the browser. For example: `"https://paidappstore.com/verify/abc123"`.
+</ResponseField>
+
+## Errors
+
+| Status | Condition |
+|--------|-----------|
+| `400` | `deviceId` was not provided. |
+| `500` | The shortener API returned an error or the request timed out. |
+
+<RequestExample>
+
+```bash cURL
+curl --request POST \
+  --url https://your-server.example.com/api/sdk/create-link \
+  --header 'x-api-key: YOUR_API_KEY' \
+  --header 'Content-Type: application/json' \
+  --data '{"deviceId": "a1b2c3d4e5f6"}'
+```
+
+</RequestExample>
+
+<ResponseExample>
+
+```json 200
+{
+  "url": "https://paidappstore.com/verify/abc123"
+}
+```
+
+```json 500 — shortener error
+{
+  "error": "Shortener API error: 503"
+}
+```
+
+</ResponseExample>

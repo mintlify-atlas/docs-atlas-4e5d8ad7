@@ -1,0 +1,266 @@
+---
+title: 'Ads'
+description: 'Create, list, update, and delete ads served by the AdVerify SDK.'
+---
+
+Each ad belongs to one API key and is served to devices that authenticate with that key. Ads support three display types: `interstitial`, `banner`, and `dialog`. Deleting an ad cascades to its impression and click records.
+
+**All endpoints require authentication.** See [Authentication](/api/admin/auth).
+
+---
+
+## GET /api/admin/ads
+
+Returns all ads ordered by creation date, newest first. Each ad includes the name of its parent API key and aggregate impression and click counts.
+
+### Response fields
+
+Returns an array of objects. Each object has the following fields:
+
+<ResponseField name="id" type="number" required>
+  Unique integer ID for the ad.
+</ResponseField>
+
+<ResponseField name="apiKeyId" type="number" required>
+  ID of the API key this ad belongs to.
+</ResponseField>
+
+<ResponseField name="title" type="string" required>
+  Ad headline text.
+</ResponseField>
+
+<ResponseField name="description" type="string" required>
+  Ad body text. Defaults to an empty string.
+</ResponseField>
+
+<ResponseField name="imageUrl" type="string" required>
+  URL of the ad image. Defaults to an empty string.
+</ResponseField>
+
+<ResponseField name="redirectUrl" type="string" required>
+  Destination URL when the user taps the ad. Defaults to an empty string.
+</ResponseField>
+
+<ResponseField name="adType" type="string" required>
+  Display type. One of `interstitial`, `banner`, or `dialog`. Defaults to `interstitial`.
+</ResponseField>
+
+<ResponseField name="buttonText" type="string" required>
+  Label on the action button. Defaults to `"Visit Now"`.
+</ResponseField>
+
+<ResponseField name="isActive" type="boolean" required>
+  Whether the ad is eligible to be served.
+</ResponseField>
+
+<ResponseField name="priority" type="number" required>
+  Sort weight used when selecting which ad to show. Defaults to `0`.
+</ResponseField>
+
+<ResponseField name="createdAt" type="string" required>
+  ISO 8601 creation timestamp.
+</ResponseField>
+
+<ResponseField name="apiKey" type="object" required>
+  Parent API key summary.
+  <Expandable title="properties">
+    <ResponseField name="appName" type="string" required>
+      Human-readable name of the app.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="_count" type="object" required>
+  Aggregate counts.
+  <Expandable title="properties">
+    <ResponseField name="impressions" type="number" required>
+      Total impressions recorded for this ad.
+    </ResponseField>
+    <ResponseField name="clicks" type="number" required>
+      Total clicks recorded for this ad.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+```bash
+curl --request GET \
+  --url https://your-server.example.com/api/admin/ads \
+  --header 'Authorization: Basic YWRtaW46c2VjcmV0'
+```
+
+```json
+[
+  {
+    "id": 7,
+    "apiKeyId": 3,
+    "title": "Subscribe for more",
+    "description": "Unlock all features by subscribing today.",
+    "imageUrl": "https://cdn.example.com/ads/subscribe.png",
+    "redirectUrl": "https://example.com/subscribe",
+    "adType": "interstitial",
+    "buttonText": "Subscribe",
+    "isActive": true,
+    "priority": 10,
+    "createdAt": "2025-02-01T08:30:00.000Z",
+    "apiKey": { "appName": "My App" },
+    "_count": { "impressions": 540, "clicks": 23 }
+  }
+]
+```
+
+---
+
+## POST /api/admin/ads
+
+Creates a new ad.
+
+### Request body
+
+<ParamField path="body.apiKeyId" type="number" required>
+  ID of the API key this ad belongs to.
+</ParamField>
+
+<ParamField path="body.title" type="string" required>
+  Ad headline text. Minimum 1 character.
+</ParamField>
+
+<ParamField path="body.description" type="string">
+  Ad body text.
+</ParamField>
+
+<ParamField path="body.imageUrl" type="string">
+  URL of the ad image.
+</ParamField>
+
+<ParamField path="body.redirectUrl" type="string">
+  Destination URL when the user taps the ad.
+</ParamField>
+
+<ParamField path="body.adType" type="string">
+  Display type. One of `interstitial`, `banner`, or `dialog`. Defaults to `interstitial`.
+</ParamField>
+
+<ParamField path="body.buttonText" type="string">
+  Label on the action button. Defaults to `"Visit Now"`.
+</ParamField>
+
+<ParamField path="body.priority" type="number">
+  Sort weight. Higher values take precedence. Defaults to `0`.
+</ParamField>
+
+### Response
+
+The newly created `Ad` object (same fields as listed above, without `apiKey` and `_count`).
+
+### Example
+
+```bash
+curl --request POST \
+  --url https://your-server.example.com/api/admin/ads \
+  --header 'Authorization: Basic YWRtaW46c2VjcmV0' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "apiKeyId": 3,
+    "title": "Subscribe for more",
+    "description": "Unlock all features by subscribing today.",
+    "imageUrl": "https://cdn.example.com/ads/subscribe.png",
+    "redirectUrl": "https://example.com/subscribe",
+    "adType": "interstitial",
+    "buttonText": "Subscribe",
+    "priority": 10
+  }'
+```
+
+---
+
+## PATCH /api/admin/ads/:id
+
+Updates one or more fields on an existing ad. Only the fields present in the request body are changed.
+
+### Path parameters
+
+<ParamField path="path.id" type="number" required>
+  The integer ID of the ad to update.
+</ParamField>
+
+### Request body
+
+<ParamField path="body.title" type="string">
+  New ad headline text.
+</ParamField>
+
+<ParamField path="body.description" type="string">
+  New ad body text.
+</ParamField>
+
+<ParamField path="body.imageUrl" type="string">
+  New image URL.
+</ParamField>
+
+<ParamField path="body.redirectUrl" type="string">
+  New destination URL.
+</ParamField>
+
+<ParamField path="body.adType" type="string">
+  New display type. One of `interstitial`, `banner`, or `dialog`.
+</ParamField>
+
+<ParamField path="body.buttonText" type="string">
+  New button label.
+</ParamField>
+
+<ParamField path="body.isActive" type="boolean">
+  Set to `false` to prevent the ad from being served.
+</ParamField>
+
+<ParamField path="body.priority" type="number">
+  New sort weight.
+</ParamField>
+
+### Response
+
+The updated `Ad` object.
+
+### Example
+
+```bash
+curl --request PATCH \
+  --url https://your-server.example.com/api/admin/ads/7 \
+  --header 'Authorization: Basic YWRtaW46c2VjcmV0' \
+  --header 'Content-Type: application/json' \
+  --data '{"isActive": false, "priority": 0}'
+```
+
+---
+
+## DELETE /api/admin/ads/:id
+
+Permanently deletes an ad and all associated impression and click records via database cascade.
+
+### Path parameters
+
+<ParamField path="path.id" type="number" required>
+  The integer ID of the ad to delete.
+</ParamField>
+
+### Response
+
+<ResponseField name="status" type="string" required>
+  Always `"deleted"` on success.
+</ResponseField>
+
+### Example
+
+```bash
+curl --request DELETE \
+  --url https://your-server.example.com/api/admin/ads/7 \
+  --header 'Authorization: Basic YWRtaW46c2VjcmV0'
+```
+
+```json
+{
+  "status": "deleted"
+}
+```

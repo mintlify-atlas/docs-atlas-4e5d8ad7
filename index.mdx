@@ -1,97 +1,97 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "AdVerify SDK"
+description: "A complete Android SDK for ad monetization and device verification — PIN-gate your app, serve interstitial ads, and track performance from one admin dashboard."
 ---
 
-## Setting up
-
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get the SDK running in your Android app in under 10 minutes.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Architecture" icon="diagram-project" href="/architecture">
+    Understand how the Android SDK, Express server, and admin dashboard fit together.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="API Reference" icon="code" href="/api/sdk/init">
+    Full reference for all SDK and admin REST endpoints.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="MT Manager / Smali" icon="wrench" href="/sdk/mt-manager">
+    Inject AdVerify into any APK with a single smali call.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## What is AdVerify?
 
-Everything you need to create world-class documentation.
+AdVerify is a full-stack ad monetization system for Android apps. It gives you three things in one package:
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+1. **PIN verification gate** — before a user can use your app, they must complete a monetized verification flow (viewing ads or articles) to receive a unique PIN.
+2. **Interstitial ad serving** — a programmatically rendered dialog shows ads fetched from your server, with impression and click tracking.
+3. **Admin dashboard** — a Next.js web panel lets you manage API keys, ad creatives, PIN configuration, and view verified devices.
 
-## Need inspiration?
+The Android SDK has **zero external dependencies** and renders all UI using Android's native `Canvas`, `Paint`, and `GradientDrawable` APIs, keeping your app lightweight.
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="Zero-dependency Android SDK" icon="android">
+    No third-party libraries. All dialogs drawn natively with Canvas. Minimum API 21.
+  </Card>
+  <Card title="PIN-gated verification" icon="lock">
+    Force users through a monetized link before accessing your app. Configurable expiry per app.
+  </Card>
+  <Card title="Interstitial ads" icon="rectangle-ad">
+    Dialog-based ads with image loading, impression tracking, and click tracking.
+  </Card>
+  <Card title="MT Manager support" icon="puzzle-piece">
+    Single smali line injection. Also ships as a DEX file for MT Manager patching workflows.
+  </Card>
+  <Card title="Express + PostgreSQL backend" icon="server">
+    TypeScript server with Prisma ORM. Full CRUD for ads, keys, PINs, and analytics.
+  </Card>
+  <Card title="Next.js admin panel" icon="gauge">
+    Web dashboard for real-time stats, ad management, PIN configuration, and device management.
+  </Card>
+</CardGroup>
+
+## How it works
+
+```
+App Launch
+    │
+    ▼
+SDK calls POST /api/sdk/init with deviceId + x-api-key
+    │
+    ├── pinEnabled=false OR pinVerified=true
+    │       → Fetch ads → Show AdDialog
+    │
+    └── pinEnabled=true AND pinVerified=false
+            → Show PinVerifyDialog
+                │
+                ├── User taps "Generate PIN & Verify"
+                │       → Server creates shortener link
+                │       → Browser opens (user earns PIN)
+                │       → User enters PIN
+                │       → POST /api/sdk/verify-pin
+                │               └── Valid → dismiss → show ads
+                │
+                └── User taps "Exit" → app closes
+```
+
+## Get started
+
+<Steps>
+  <Step title="Deploy the server">
+    Clone the repo, set your `DATABASE_URL`, and run `bun dev` to start the Express API.
+    See [Server Setup](/server/setup).
+  </Step>
+  <Step title="Create an API key">
+    Open the admin dashboard and create an API key for your app.
+    See [API Keys](/dashboard/api-keys).
+  </Step>
+  <Step title="Add the SDK to your Android project">
+    Copy the `adverify` module into your project and add it as a dependency.
+    See [SDK Installation](/sdk/installation).
+  </Step>
+  <Step title="Initialize and show">
+    Call `AdVerify.init()` in your `Application.onCreate()` and `AdVerify.show()` where needed.
+    See [Initialization](/sdk/initialization).
+  </Step>
+</Steps>

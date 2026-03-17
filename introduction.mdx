@@ -1,0 +1,75 @@
+---
+title: "Introduction"
+description: "AdVerify is a full-stack ad monetization and device verification system for Android apps — PIN-gate access, serve interstitial ads, and track performance from one admin dashboard."
+---
+
+AdVerify lets Android app developers monetize their user base through a mandatory device verification flow, interstitial ad serving, and a web-based admin panel. The entire system ships as three tightly integrated components that communicate over a single REST API.
+
+## The problem AdVerify solves
+
+App developers who distribute modified or premium APKs outside official stores have no reliable mechanism to:
+
+- Ensure users engage with monetized content before accessing the app
+- Serve targeted interstitial ads at app launch without pulling in a heavyweight ad SDK
+- Revoke or expire access per-device without updating the APK
+- Track impressions and clicks for their own ad inventory
+
+AdVerify addresses all four by pairing a zero-dependency Android SDK with a self-hosted Express backend and a Next.js admin panel.
+
+## Three-component overview
+
+<Columns cols={3}>
+  <Card title="Android SDK" icon="android">
+    A pure-Java library (min API 21) with zero external dependencies. Renders PIN verification and ad dialogs natively using `Canvas`, `Paint`, and `GradientDrawable`. Ships as a standard AAR module and as a DEX file for MT Manager smali injection.
+  </Card>
+  <Card title="Express server" icon="server">
+    A TypeScript/Express API backed by PostgreSQL via Prisma ORM. Manages API keys, ad creatives, PIN configuration, device verification records, and impression/click analytics.
+  </Card>
+  <Card title="Admin dashboard" icon="gauge">
+    A Next.js (App Router) web panel for managing every aspect of the system: create API keys, upload ad creatives, configure PIN expiry, and view verified devices and analytics.
+  </Card>
+</Columns>
+
+## Key features
+
+<Columns cols={2}>
+  <Card title="PIN-gated access" icon="lock">
+    Force users through a monetized shortener link before they can use your app. Users view ads or articles on an external site, receive a unique PIN, and enter it to unlock the app.
+  </Card>
+  <Card title="Configurable PIN expiry" icon="clock">
+    Set expiry per app: `never` (permanent after first verification) or `duration` (re-verify after N hours). The server enforces expiry on every `/api/sdk/init` call.
+  </Card>
+  <Card title="Interstitial ads" icon="rectangle-ad">
+    Dialog-based ads with remote image loading, impression tracking, and click tracking — all served from your own backend inventory.
+  </Card>
+  <Card title="Zero-dependency SDK" icon="feather">
+    No Gson, Retrofit, Glide, or any third-party library. All UI is drawn with Android's native APIs. Keeps APK size minimal.
+  </Card>
+  <Card title="MT Manager / smali support" icon="puzzle-piece">
+    A single smali line (`invoke-static`) is all it takes to inject AdVerify into any existing APK using MT Manager. Reads config from `AndroidManifest.xml` meta-data.
+  </Card>
+  <Card title="Full analytics" icon="chart-line">
+    Every impression and click is stored in PostgreSQL, linked to the device ID, and visible from the admin dashboard.
+  </Card>
+</Columns>
+
+## Tech stack
+
+| Component | Technology |
+|-----------|------------|
+| Android SDK | Java, zero dependencies, min API 21, packaged as AAR and DEX |
+| Server | Express.js, TypeScript, Prisma ORM, PostgreSQL |
+| Admin panel | Next.js (App Router), TypeScript |
+| PIN flow | Shortener links via paidappstore.com API |
+| Build tooling | `tsx` for development, `tsc` for production builds |
+
+## Next steps
+
+<Columns cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Deploy the server, create an API key, and get the SDK running in your Android app end to end.
+  </Card>
+  <Card title="Architecture" icon="diagram-project" href="/architecture">
+    Understand how the Android SDK, Express server, and admin dashboard fit together at a component and data-flow level.
+  </Card>
+</Columns>

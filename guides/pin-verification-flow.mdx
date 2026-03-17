@@ -1,0 +1,269 @@
+---
+title: "PIN Verification Flow"
+description: "End-to-end walkthrough of the PIN verification flow, from app launch to access granted."
+keywords: ["pin", "verification", "flow", "adverify", "device"]
+---
+
+The PIN verification flow gates access to your app until a user completes a monetized verification step — viewing ads or articles through a shortener link to receive a PIN. This page traces every step from the first SDK call to the moment ads are shown.
+
+## Flow overview
+
+```
+App Launch
+    │
+    ▼
+AdVerify.show(activity)  ─────────────────────────────────────┐
+    │                                                          │
+    ▼                                                          │
+POST /api/sdk/init  { deviceId }                              │
+    │                                                          │
+    ├── pinEnabled=false ──────────────────────────────────────┤
+    │                                                          │
+    ├── pinEnabled=true, pinVerified=true ────────────────────►│
+    │                                                          │
+    └── pinEnabled=true, pinVerified=false                     │
+            │                                                  │
+            ▼                                                  │
+      PinVerifyDialog shown  (info state)                      │
+            │                                                  │
+            ├── "Generate PIN & Verify" tapped                 │
+            │        │                                         │
+            │        ▼                                         │
+            │  POST /api/sdk/create-link  { deviceId }         │
+            │        │                                         │
+            │        ▼                                         │
+            │  Browser opens shortener URL                     │
+            │  User views ads/articles → receives PIN          │
+            │        │                                         │
+            │        ▼                                         │
+            │  Dialog switches to PIN entry state              │
+            │        │                                         │
+            ├── User enters PIN → "Verify" tapped              │
+            │        │                                         │
+            │        ▼                                         │
+            │  POST /api/sdk/verify-pin  { pin, deviceId }     │
+            │        │                                         │
+            │        ├── verified=true ─────────────────────►  │
+            │        └── verified=false → showError()          │
+            │                                                  │
+            ▼                                                  ▼
+      dialog.dismiss()                              fetchAndShowAds()
+```
+
+## Step-by-step walkthrough
+
+<Steps>
+  <Step title="Initialize the SDK">
+    Call `AdVerify.init()` once — typically in `Application.onCreate()` — then call `AdVerify.show(activity)` when you want to display the flow.
+
+    ```java AdVerify.java
+    AdVerify.init(context, "YOUR_API_KEY", "https://your-server.com");
+    AdVerify.show(activity, new AdVerifyCallback() {
+        @Override public void onAdShown()    { /* ad is visible */ }
+        @Override public void onAdClicked(String url) { /* user tapped CTA */ }
+        @Override public void onAdClosed()  { /* dialog dismissed */ }
+        @Override public void onError(String msg) { /* handle error */ }
+    });
+    ```
+
+    Internally, `show()` builds an `AdClient` from the stored credentials and delegates to `AdLoader.load()`.
+  </Step>
+
+  <Step title="POST /api/sdk/init">
+    `AdLoader.load()` immediately calls `client.init(deviceId, callback)`. The device ID is `Settings.Secure.ANDROID_ID`, captured once during `init()`.
+
+    ```java AdLoader.java
+    client.init(deviceId, new AdClient.Callback<InitResponse>() {
+        @Override
+        public void onSuccess(InitResponse config) {
+            if (config.pinEnabled && !config.pinVerified) {
+                showPinDialog(config);
+            } else {
+                fetchAndShowAds();
+            }
+        }
+    });
+    ```
+
+    The server checks the device's PIN record and returns:
+
+    ```json
+    {
+      "appName": "MyApp",
+      "pinEnabled": true,
+      "pinVerified": false,
+      "pinMessage": "Verify your device to continue",
+      "maxAttempts": 5,
+      "getPinBtnText": "Generate PIN & Verify",
+      "pinInfoItems": [
+        { "icon": "device",    "text": "Device Not Registered",        "color": "#3b82f6" },
+        { "icon": "hourglass", "text": "Access Duration: 24 Hours",     "color": "#22c55e" },
+        { "icon": "key",       "text": "Automatic Password System",     "color": "#8b5cf6" },
+        { "icon": "crown",     "text": "Premium Users Only",            "color": "#eab308" },
+        { "icon": "shield",    "text": "VPN & Emulators Not Allowed",   "color": "#ef4444" }
+      ],
+      "tutorialUrl": "https://t.me/EllieTutorials/36",
+      "joinLinks": [
+        { "name": "Public Channel", "description": "Apps, APKs & Mods",  "url": "https://t.me/...", "iconType": "channel" },
+        { "name": "Private Channel", "description": "Exclusive Content", "url": "https://t.me/...", "iconType": "telegram" }
+      ]
+    }
+    ```
+
+    If `pinEnabled` is `false` or `pinVerified` is `true`, the flow skips straight to ad fetching.
+  </Step>
+
+  <Step title="Show the PIN verification dialog (info state)">
+    When `pinEnabled=true` and `pinVerified=false`, `AdLoader` opens `PinVerifyDialog` in its initial info state. The dialog renders:
+
+    - A Canvas-drawn shield-and-lock icon
+    - The `appName` as the title, `pinMessage` as the subtitle
+    - An info card with colored icon dots for each `pinInfoItem`
+    - A primary **Generate PIN & Verify** button (solid black)
+    - An **Enter PIN** button (outlined) — switches directly to PIN entry if the user already has a PIN
+    - Ghost **Tutorial** and **Join Us** buttons
+    - A red **Exit** button that calls `activity.finish()`
+
+    <Note>
+      If the server returns empty `pinInfoItems` or `joinLinks`, `AdLoader` substitutes hardcoded fallback values so the dialog always renders meaningful content.
+    </Note>
+  </Step>
+
+  <Step title="User taps &quot;Generate PIN &amp; Verify&quot;">
+    `PinListener.onGetPinClicked()` fires. The button enters a loading state (`Generating...`, 45 % opacity) while `AdLoader` calls:
+
+    ```java AdLoader.java
+    client.createLink(deviceId, new AdClient.Callback<String>() {
+        @Override
+        public void onSuccess(String url) {
+            dlg.setGetPinLoading(false);
+            dlg.openUrl(url);        // opens browser via Intent.ACTION_VIEW
+            dlg.switchToPinState(); // animates to PIN entry
+        }
+    });
+    ```
+
+    The server creates a shortener link via the paidappstore.com API and returns a URL of the form `https://<shortener-frontend>/verify/<code>`. The user visits that URL, views the required ads or articles, and receives a numeric PIN at the end.
+  </Step>
+
+  <Step title="User enters PIN">
+    The dialog switches to its PIN entry state: a centered numeric input (monospace, letter-spacing 0.3), a **Verify** button, and a **← Back** button. When **Verify** is tapped:
+
+    ```java PinVerifyDialog.java
+    verifyBtn.setOnClickListener(v -> {
+        String pin = pinInput.getText().toString().trim();
+        if (pin.isEmpty()) { showError("Please enter a PIN"); return; }
+        attempts++;
+        if (attempts >= maxAttempts) {
+            dialog.dismiss();
+            if (listener != null) listener.onMaxAttemptsReached();
+            return;
+        }
+        if (listener != null) listener.onPinSubmit(pin, PinVerifyDialog.this);
+    });
+    ```
+  </Step>
+
+  <Step title="POST /api/sdk/verify-pin">
+    `AdLoader` calls `client.verifyPin(pin, deviceId, callback)`, which POSTs:
+
+    ```json
+    { "pin": "482913", "deviceId": "abc123..." }
+    ```
+
+    The server looks up an unused `UserPin` record matching `{ apiKeyId, deviceId, pin, isUsed: false }`. On a match it marks the record as used, sets `usedAt`, and calculates `expiresAt` based on the configured expiry mode.
+
+    ```json
+    { "verified": true, "message": "PIN verified. App unlocked!" }
+    ```
+
+    On success, `AdLoader` dismisses the dialog and calls `fetchAndShowAds()`.
+  </Step>
+
+  <Step title="Ads are fetched and shown">
+    After verification (or if verification was not required), the SDK proceeds to `GET /api/sdk/ads`. See the [Ad Serving](/guides/ad-serving) guide for the full ad flow.
+  </Step>
+</Steps>
+
+## PIN expiry
+
+Expiry behavior is configured per app in the admin panel under **PIN Settings**.
+
+| Mode | `expiresAt` stored | Behavior |
+|---|---|---|
+| `never` | `null` | Once verified, the device stays verified permanently. |
+| `duration` | `usedAt + expiryHours * 3600s` | Verification expires after N hours (default 24). The user must complete the flow again. |
+
+The server evaluates expiry on **every** `/api/sdk/init` call inside `isDeviceVerified()`:
+
+```typescript sdk.service.ts
+private async isDeviceVerified(
+  apiKeyId: number,
+  deviceId: string,
+  config: { expiryMode: string; expiryHours: number } | null,
+): Promise<boolean> {
+  const verifiedPin = await prisma.userPin.findFirst({
+    where: { apiKeyId, deviceId, isUsed: true },
+    orderBy: { usedAt: 'desc' },
+  });
+
+  if (!verifiedPin) return false;
+
+  // Never expires
+  if (!config || config.expiryMode === 'never') return true;
+
+  // Check if PIN has expired
+  if (verifiedPin.expiresAt && new Date() > verifiedPin.expiresAt) {
+    await prisma.userPin.delete({ where: { id: verifiedPin.id } });
+    return false;
+  }
+
+  return true;
+}
+```
+
+When the PIN is expired, the record is deleted immediately and `pinVerified` is returned as `false`, causing the dialog to appear again on the next app launch.
+
+## Max attempts
+
+The `maxAttempts` field from the init response limits how many times a user can attempt PIN entry before the dialog closes and `AdVerifyCallback.onError("Max PIN attempts reached")` is called:
+
+```java PinVerifyDialog.java
+attempts++;
+if (attempts >= maxAttempts) {
+    dialog.dismiss();
+    if (listener != null) listener.onMaxAttemptsReached();
+    return;
+}
+```
+
+The attempt counter resets each time the dialog is re-opened (i.e., on the next `AdVerify.show()` call). `maxAttempts` defaults to `3` if not set in the admin panel.
+
+## Info items and join links
+
+The info card and the Join Us dialog are populated from the server response. If the server returns empty arrays, `AdLoader` uses the following hardcoded fallback values:
+
+```java AdLoader.java
+private static final PinInfoItem[] FALLBACK_INFO_ITEMS = new PinInfoItem[] {
+    new PinInfoItem("device",    "Device Not Registered",        "#3b82f6"),
+    new PinInfoItem("hourglass", "Access Duration: 24 Hours",   "#22c55e"),
+    new PinInfoItem("key",       "Automatic Password System",   "#8b5cf6"),
+    new PinInfoItem("crown",     "Premium Users Only",          "#eab308"),
+    new PinInfoItem("shield",    "VPN & Emulators Not Allowed", "#ef4444"),
+};
+
+private static final JoinLink[] FALLBACK_JOIN_LINKS = new JoinLink[] {
+    new JoinLink("Public Channel",  "Apps, APKs & Mods",  "https://t.me/Android_apps_apks_mod", "channel"),
+    new JoinLink("Private Channel", "Exclusive Content",  "https://t.me/+PXcn1RVLom0xMzU1",    "telegram"),
+};
+```
+
+Icons are drawn on `Canvas` by `PinVerifyDialog.drawDotIcon()`. The `icon` string maps to a drawing routine:
+
+| `icon` value | Drawing | Dot color |
+|---|---|---|
+| `device`, `info` | Phone with signal wave | Blue `#3b82f6` |
+| `clock`, `hourglass` | Hourglass with sand | Green `#22c55e` |
+| `key`, `sparkle` | Key with sparkle | Violet `#8b5cf6` |
+| `star`, `crown` | Crown with gems | Amber `#eab308` |
+| `warning`, `shield-x` | Shield with X | Red `#ef4444` |

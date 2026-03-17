@@ -1,0 +1,227 @@
+---
+title: "Database"
+description: "PostgreSQL schema, Prisma models, migrations, and seed data for the AdVerify server."
+---
+
+The AdVerify server uses **PostgreSQL** with **Prisma ORM**. The schema is defined in `prisma/schema.prisma` and managed with `prisma db push` for development and `prisma migrate` for production.
+
+## Schema overview
+
+The database contains seven models:
+
+| Model | Table | Description |
+|-------|-------|-------------|
+| `ApiKey` | `api_keys` | Registered apps and their API keys |
+| `Ad` | `ads` | Ad creatives served to devices |
+| `PinConfig` | `pin_configs` | Per-app PIN verification settings |
+| `UserPin` | `user_pins` | Per-device PINs generated and verified |
+| `GlobalSettings` | `global_settings` | Server-wide unlock mode settings |
+| `Impression` | `impressions` | Ad impression events |
+| `Click` | `clicks` | Ad click events |
+
+## Models
+
+### ApiKey
+
+Represents a registered application. Every SDK request is authenticated against an `ApiKey` record.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `id` | `Int` | auto-increment | Primary key |
+| `key` | `String` | — | Unique API key string |
+| `appName` | `String` | — | Human-readable app name |
+| `packageName` | `String` | `""` | Android package name (e.g. `com.example.app`) |
+| `isActive` | `Boolean` | `true` | Whether this key is currently valid |
+| `createdAt` | `DateTime` | `now()` | Creation timestamp |
+
+**Relations:** has many `Ad`, `UserPin`, `Impression`, `Click`; has one optional `PinConfig`.
+
+### Ad
+
+An ad creative associated with an API key.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `id` | `Int` | auto-increment | Primary key |
+| `apiKeyId` | `Int` | — | Foreign key to `ApiKey` |
+| `title` | `String` | — | Ad title |
+| `description` | `String` | `""` | Ad body text |
+| `imageUrl` | `String` | `""` | URL of the ad image |
+| `redirectUrl` | `String` | `""` | URL opened when the user taps the button |
+| `adType` | `String` | `"interstitial"` | Ad format: `interstitial`, `banner`, or `dialog` |
+| `buttonText` | `String` | `"Visit Now"` | CTA button label |
+| `isActive` | `Boolean` | `true` | Whether the ad is served |
+| `priority` | `Int` | `0` | Higher values are served first |
+| `createdAt` | `DateTime` | `now()` | Creation timestamp |
+
+**Relations:** belongs to `ApiKey`; has many `Impression`, `Click`. Deleting an `ApiKey` cascades to its ads.
+
+### PinConfig
+
+Per-app configuration for the PIN verification flow. One `PinConfig` per `ApiKey`.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `id` | `Int` | auto-increment | Primary key |
+| `apiKeyId` | `Int` | — | Unique foreign key to `ApiKey` |
+| `pinEnabled` | `Boolean` | `false` | Whether PIN verification is required |
+| `pinMessage` | `String` | `"Enter PIN to unlock"` | Message shown in the PIN dialog |
+| `maxAttempts` | `Int` | `3` | Maximum wrong PIN attempts before lockout |
+| `getPinUrl` | `String` | `""` | URL for the "Get PIN" button |
+| `getPinBtnText` | `String` | `"Get PIN"` | Label for the get-PIN button |
+| `enterPinBtnText` | `String` | `"Enter PIN"` | Label for the enter-PIN button |
+| `expiryMode` | `String` | `"never"` | Expiry mode: `never` or `duration` |
+| `expiryHours` | `Int` | `24` | Hours until a PIN expires (used when `expiryMode` is `duration`) |
+| `tutorialUrl` | `String` | `https://t.me/EllieTutorials/36` | URL for the tutorial button |
+| `pinInfoItems` | `Json` | `[]` | Array of info items shown in the PIN dialog |
+| `joinLinks` | `Json` | `[]` | Array of community links shown in the join dialog |
+
+**Relations:** belongs to `ApiKey` (cascade delete).
+
+### UserPin
+
+A unique PIN generated for a specific device. Pins are bound to a `(apiKeyId, deviceId)` pair at generation time.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `id` | `Int` | auto-increment | Primary key |
+| `apiKeyId` | `Int` | — | Foreign key to `ApiKey` |
+| `deviceId` | `String` | — | Android device ID |
+| `pin` | `String` | — | 6-digit PIN |
+| `isUsed` | `Boolean` | `false` | Whether the PIN has been successfully verified |
+| `createdAt` | `DateTime` | `now()` | Creation timestamp |
+| `usedAt` | `DateTime?` | `null` | Timestamp when the PIN was verified |
+| `expiresAt` | `DateTime?` | `null` | Expiry timestamp; `null` means the PIN never expires |
+
+**Unique constraint:** `(apiKeyId, deviceId, pin)`. **Index:** `(apiKeyId, deviceId)` for fast lookup.
+
+### GlobalSettings
+
+A single-row table (id always `1`) that controls how PIN verification is scoped across apps.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `id` | `Int` | `1` | Always `1` — only one row exists |
+| `pinUnlockMode` | `String` | `"per_app"` | Unlock scope: `per_app`, `global`, or `global_except` |
+| `excludedAppIds` | `Int[]` | `[]` | API key IDs excluded from global unlock (used with `global_except`) |
+| `updatedAt` | `DateTime` | auto-updated | Last update timestamp |
+
+**Unlock modes:**
+
+| Mode | Behavior |
+|------|----------|
+| `per_app` | Each app checks only its own PINs. Default behavior. |
+| `global` | A device verified on any app is considered verified on all apps. |
+| `global_except` | Global unlock applies, except for apps listed in `excludedAppIds`. |
+
+### Impression
+
+Records each time an ad is displayed to a device.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `id` | `Int` | auto-increment | Primary key |
+| `adId` | `Int` | — | Foreign key to `Ad` |
+| `apiKeyId` | `Int` | — | Foreign key to `ApiKey` |
+| `deviceId` | `String` | `""` | Android device ID |
+| `createdAt` | `DateTime` | `now()` | Timestamp of the impression |
+
+### Click
+
+Records each time a user taps the CTA button on an ad.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `id` | `Int` | auto-increment | Primary key |
+| `adId` | `Int` | — | Foreign key to `Ad` |
+| `apiKeyId` | `Int` | — | Foreign key to `ApiKey` |
+| `deviceId` | `String` | `""` | Android device ID |
+| `createdAt` | `DateTime` | `now()` | Timestamp of the click |
+
+## Database commands
+
+### Apply schema changes
+
+Push the current Prisma schema directly to the database. This is the recommended approach for development — it does not create migration files.
+
+<CodeGroup>
+
+```bash bun
+bun run db:push
+```
+
+```bash npm
+npm run db:push
+```
+
+</CodeGroup>
+
+Runs `prisma db push` under the hood.
+
+### Seed demo data
+
+Populate the database with a demo API key, PIN config, and sample ad:
+
+<CodeGroup>
+
+```bash bun
+bun run db:seed
+```
+
+```bash npm
+npm run db:seed
+```
+
+</CodeGroup>
+
+The seed script (`prisma/seed.ts`) creates:
+
+- An `ApiKey` for **Demo App** with package name `com.adverify.demo`
+- A `PinConfig` with PIN disabled
+- An interstitial `Ad` titled **Welcome Ad** pointing to `https://example.com`
+
+The generated API key is printed to stdout:
+
+```
+Seed complete. API Key: 3f2a1b4c5d6e7f8a9b0c1d2e3f4a5b6c
+```
+
+### Open Prisma Studio
+
+Launch a browser-based GUI to browse and edit database records:
+
+<CodeGroup>
+
+```bash bun
+bun run db:studio
+```
+
+```bash npm
+npm run db:studio
+```
+
+</CodeGroup>
+
+Runs `prisma studio` and opens `http://localhost:5555` in your browser.
+
+<Tip>
+  Prisma Studio is useful for inspecting UserPin records, verifying seed data, or manually updating settings during development.
+</Tip>
+
+### Production migrations
+
+For production deployments where you need a tracked migration history, use `prisma migrate` instead of `db:push`:
+
+```bash
+npx prisma migrate deploy
+```
+
+To create a new named migration during development:
+
+```bash
+npx prisma migrate dev --name describe-your-change
+```
+
+<Note>
+  `db:push` does not create migration files and will warn you if it would cause data loss. Use `prisma migrate` for production databases where you need audit trails and rollback capability.
+</Note>

@@ -1,0 +1,224 @@
+---
+title: 'PIN Configuration'
+description: 'Manage per-app PIN gate configuration for the AdVerify SDK.'
+---
+
+Each API key has exactly one PIN configuration record that controls how the PIN gate behaves in the app. A default configuration is created automatically when an API key is created.
+
+**All endpoints require authentication.** See [Authentication](/api/admin/auth).
+
+---
+
+## GET /api/admin/pin-config
+
+Returns all PIN configuration records across all API keys.
+
+### Response fields
+
+Returns an array of `PinConfig` objects. Each object has the following fields:
+
+<ResponseField name="id" type="number" required>
+  Unique integer ID.
+</ResponseField>
+
+<ResponseField name="apiKeyId" type="number" required>
+  ID of the API key this config belongs to.
+</ResponseField>
+
+<ResponseField name="pinEnabled" type="boolean" required>
+  Whether the PIN gate is active for this app. Defaults to `false`.
+</ResponseField>
+
+<ResponseField name="pinMessage" type="string" required>
+  Message shown to the user when prompted to enter a PIN. Defaults to `"Enter PIN to unlock"`.
+</ResponseField>
+
+<ResponseField name="maxAttempts" type="number" required>
+  Maximum number of incorrect PIN attempts before the user is locked out. Defaults to `3`.
+</ResponseField>
+
+<ResponseField name="getPinUrl" type="string" required>
+  URL the user is directed to in order to obtain a PIN. Defaults to an empty string.
+</ResponseField>
+
+<ResponseField name="getPinBtnText" type="string" required>
+  Label on the button that takes the user to `getPinUrl`. Defaults to `"Get PIN"`.
+</ResponseField>
+
+<ResponseField name="enterPinBtnText" type="string" required>
+  Label on the button that opens the PIN entry field. Defaults to `"Enter PIN"`.
+</ResponseField>
+
+<ResponseField name="expiryMode" type="string" required>
+  Controls how long a used PIN remains valid. One of `never` or `duration`. Defaults to `"never"`.
+</ResponseField>
+
+<ResponseField name="expiryHours" type="number" required>
+  Hours until a used PIN expires when `expiryMode` is `"duration"`. Defaults to `24`.
+</ResponseField>
+
+<ResponseField name="tutorialUrl" type="string" required>
+  URL to a tutorial video or page shown alongside the PIN prompt. Defaults to `"https://t.me/EllieTutorials/36"`.
+</ResponseField>
+
+<ResponseField name="pinInfoItems" type="array" required>
+  Array of informational items displayed on the PIN screen.
+  <Expandable title="properties">
+    <ResponseField name="icon" type="string" required>
+      Icon identifier or URL for the item.
+    </ResponseField>
+    <ResponseField name="text" type="string" required>
+      Descriptive text for the item.
+    </ResponseField>
+    <ResponseField name="color" type="string" required>
+      Hex color string applied to the icon (e.g. `"#FF5733"`).
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="joinLinks" type="array" required>
+  Array of community or channel links shown on the PIN screen.
+  <Expandable title="properties">
+    <ResponseField name="name" type="string" required>
+      Display name of the link.
+    </ResponseField>
+    <ResponseField name="description" type="string" required>
+      Short description of the linked resource.
+    </ResponseField>
+    <ResponseField name="url" type="string" required>
+      Destination URL.
+    </ResponseField>
+    <ResponseField name="iconType" type="string" required>
+      Icon identifier used to render the link button.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+```bash
+curl --request GET \
+  --url https://your-server.example.com/api/admin/pin-config \
+  --header 'Authorization: Basic YWRtaW46c2VjcmV0'
+```
+
+```json
+[
+  {
+    "id": 1,
+    "apiKeyId": 3,
+    "pinEnabled": true,
+    "pinMessage": "Enter your PIN to continue",
+    "maxAttempts": 3,
+    "getPinUrl": "https://t.me/mychannelbot",
+    "getPinBtnText": "Get PIN",
+    "enterPinBtnText": "Enter PIN",
+    "expiryMode": "duration",
+    "expiryHours": 48,
+    "tutorialUrl": "https://t.me/EllieTutorials/36",
+    "pinInfoItems": [
+      { "icon": "star", "text": "Join our channel to get a PIN", "color": "#FFD700" }
+    ],
+    "joinLinks": [
+      {
+        "name": "Telegram Channel",
+        "description": "Join and type /getpin",
+        "url": "https://t.me/mychannel",
+        "iconType": "telegram"
+      }
+    ]
+  }
+]
+```
+
+---
+
+## POST /api/admin/pin-config
+
+Creates or updates the PIN configuration for an API key (upsert). When switching `expiryMode` to `"duration"`, the server automatically backfills `expiresAt` on existing active PINs that have no expiry. When switching to `"never"`, `expiresAt` is cleared from all active PINs for that key.
+
+### Request body
+
+<ParamField path="body.apiKeyId" type="number" required>
+  ID of the API key to create or update the config for.
+</ParamField>
+
+<ParamField path="body.pinEnabled" type="boolean">
+  Whether to enable the PIN gate.
+</ParamField>
+
+<ParamField path="body.pinMessage" type="string">
+  Message shown to the user when prompted to enter a PIN.
+</ParamField>
+
+<ParamField path="body.maxAttempts" type="number">
+  Maximum number of incorrect PIN attempts before lockout.
+</ParamField>
+
+<ParamField path="body.getPinUrl" type="string">
+  URL where users can obtain a PIN.
+</ParamField>
+
+<ParamField path="body.getPinBtnText" type="string">
+  Label on the "get PIN" button.
+</ParamField>
+
+<ParamField path="body.enterPinBtnText" type="string">
+  Label on the "enter PIN" button.
+</ParamField>
+
+<ParamField path="body.expiryMode" type="string">
+  `"never"` — PINs do not expire after use. `"duration"` — PINs expire after `expiryHours` hours.
+</ParamField>
+
+<ParamField path="body.expiryHours" type="number">
+  Number of hours a used PIN remains valid when `expiryMode` is `"duration"`.
+</ParamField>
+
+<ParamField path="body.tutorialUrl" type="string">
+  URL to a tutorial shown alongside the PIN prompt.
+</ParamField>
+
+<ParamField path="body.pinInfoItems" type="array">
+  Array of `{ icon, text, color }` objects displayed on the PIN screen.
+</ParamField>
+
+<ParamField path="body.joinLinks" type="array">
+  Array of `{ name, description, url, iconType }` objects shown on the PIN screen.
+</ParamField>
+
+### Response
+
+The created or updated `PinConfig` object (same fields as described above).
+
+### Example
+
+```bash
+curl --request POST \
+  --url https://your-server.example.com/api/admin/pin-config \
+  --header 'Authorization: Basic YWRtaW46c2VjcmV0' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "apiKeyId": 3,
+    "pinEnabled": true,
+    "pinMessage": "Enter your PIN to continue",
+    "maxAttempts": 3,
+    "getPinUrl": "https://t.me/mychannelbot",
+    "getPinBtnText": "Get PIN",
+    "enterPinBtnText": "Enter PIN",
+    "expiryMode": "duration",
+    "expiryHours": 48,
+    "tutorialUrl": "https://t.me/EllieTutorials/36",
+    "pinInfoItems": [
+      { "icon": "star", "text": "Join our channel to get a PIN", "color": "#FFD700" }
+    ],
+    "joinLinks": [
+      {
+        "name": "Telegram Channel",
+        "description": "Join and type /getpin",
+        "url": "https://t.me/mychannel",
+        "iconType": "telegram"
+      }
+    ]
+  }'
+```

@@ -1,0 +1,133 @@
+---
+title: "Dialogs"
+description: "The AdVerify SDK renders three dialogs programmatically — PinVerifyDialog, AdDialog, and JoinDialog. All use a light #fafafa theme with Canvas-drawn icons."
+---
+
+All SDK dialogs are built entirely with Android's programmatic UI APIs (`LinearLayout`, `Canvas`, `Paint`, `GradientDrawable`). There are no XML layouts, no image assets, and no external libraries. Dialogs enter with a **200ms fade + scale** animation (`AlphaAnimation` from 0→1, `ScaleAnimation` from 0.95→1 centered on the dialog).
+
+<Note>
+  These dialogs are fully managed by the SDK. You cannot subclass or override them. Their content (titles, messages, info items, join links, button text) is configured through the server's `/api/sdk/init` response — see the [server init response](/architecture#server-init-response) for the full JSON schema.
+</Note>
+
+## PinVerifyDialog
+
+Shown when the server reports `pinEnabled: true` and `pinVerified: false` for the current device. The dialog is **not cancelable** — the user must either get and enter a PIN or tap **Exit** to close the app.
+
+The dialog has two states that transition with a 150ms alpha fade:
+
+### Info card state (default)
+
+Displays on first open. Contains:
+
+- A Canvas-drawn **shield with lock icon** (black `#1a1a1a` with white lock and keyhole)
+- A **title** and **subtitle** from the server (`appName`, `pinMessage`)
+- An **info card** listing the PIN info items from the server response
+- Two primary buttons: **Get PIN** (solid `#111111`) and **Enter PIN** (outlined `#dddddd` border)
+- Two ghost buttons: **Tutorial** and **Join Us**
+- An **Exit** button (red pill, color `#ee5555`)
+
+The info card renders each `PinInfoItem` as a row with a colored icon dot and a label. The first row shows a `PENDING` badge in blue.
+
+### PIN entry state
+
+Activated when the user taps **Get PIN** (after the server returns a link and opens the browser) or **Enter PIN**. Contains:
+
+- A prompt: `"Enter the PIN from your browser"`
+- A full-width monospace numeric `EditText` (secure input, `TYPE_NUMBER_VARIATION_PASSWORD`)
+- An error message label (hidden until needed, red `#ee5555`)
+- An attempts remaining counter (hidden until after the first failed attempt)
+- A **Verify** button (solid `#111111`)
+- A **← Back** button returning to the info card state
+
+```java PinVerifyDialog.java
+void switchToPinState()     // info card → PIN entry (called after Get PIN succeeds)
+void setVerifyLoading(boolean loading)   // disables Verify button, shows "Verifying..."
+void setGetPinLoading(boolean loading)   // disables Get PIN button, shows "Generating..."
+void showError(String msg)  // shows error text, clears PIN input, updates attempt counter
+void dismiss()              // closes the dialog
+void openUrl(String url)    // opens a URL in the system browser
+```
+
+## AdDialog
+
+Shown after PIN verification passes (or immediately if PIN is not required). Displays a single ad from the server. The dialog is **cancelable** — tapping outside dismisses it.
+
+Layout (top to bottom):
+
+1. **Background image** — 160dp tall, `CENTER_CROP` scale, loaded asynchronously via `HttpURLConnection` on a background thread. Placeholder is `#eeeeee`. Omitted if `ad.imageUrl` is empty.
+2. **Content area** — 24dp horizontal padding
+   - **Title** — 17sp bold, color `#111111`
+   - **Description** — 13sp, color `#888888`, line spacing 1.35×. Omitted if empty.
+   - **Divider** — 1dp, color `#f2f2f2`
+   - **Button row** — **Close** (ghost, muted `#999999`) on the left, **CTA button** (solid `#111111`, bold) on the right
+
+The CTA button text comes from `ad.buttonText` (default: `"Visit Now"`). Tapping it:
+1. Calls `callback.onAdClicked(ad.redirectUrl)`
+2. Opens `ad.redirectUrl` in the system browser
+3. Dismisses the dialog
+
+Dismissing the dialog (any method) calls `callback.onAdClosed()`.
+
+## JoinDialog
+
+Shown when the user taps **Join Us** in the `PinVerifyDialog`. Displays community links configured in the server response (`joinLinks` array). The dialog is **cancelable**.
+
+Layout:
+
+- A Canvas-drawn **community icon** (two person silhouettes on a blue `#eef6ff` circle)
+- Title: `"Join Our Community"`
+- Subtitle: `"Get updates, mods & support"`
+- A list of **link cards**, one per `JoinLink`
+- A **Close** button (outlined, muted `#888888`)
+
+Each link card shows:
+- A Canvas-drawn icon: paper plane for `iconType: "telegram"` (blue `#0088cc` on `#e8f4fd`), megaphone for `iconType: "channel"` (green `#22c55e` on `#eef8ee`)
+- The link `name` (bold, `#222222`) and `description` (11sp, `#999999`)
+- A `›` chevron on the right
+
+Tapping a card opens the link's `url` in the system browser.
+
+## Icon types
+
+The `PinVerifyDialog` info card renders icons with `Canvas` based on the `icon` field from each `PinInfoItem` in the server response. The `icon` field is matched case-insensitively.
+
+| `icon` value | Drawing | Dot background | Icon color |
+|-------------|---------|----------------|------------|
+| `device` / `info` | Phone outline with signal wave | `#eef6ff` | `#3b82f6` (blue) |
+| `clock` / `hourglass` | Hourglass with sand fill | `#eefbf4` | `#22c55e` (green) |
+| `key` / `sparkle` | Key with sparkle accent | `#f3f0ff` | `#8b5cf6` (violet) |
+| `star` / `crown` | Crown with gems and base | `#fefce8` | `#eab308` (amber) |
+| `warning` / `shield-x` | Shield outline with X | `#fef2f2` | `#ef4444` (red) |
+| _(any other value)_ | Filled circle | `#f5f5f5` | `#999999` (grey) |
+
+The icon values come from the server `pinInfoItems` array. Defaults used when the server response is empty:
+
+```java AdLoader.java
+private static final PinInfoItem[] FALLBACK_INFO_ITEMS = new PinInfoItem[] {
+    new PinInfoItem("device",    "Device Not Registered",      "#3b82f6"),
+    new PinInfoItem("hourglass", "Access Duration: 24 Hours",  null),
+    new PinInfoItem("key",       "Automatic Password System",  null),
+    new PinInfoItem("crown",     "Premium Users Only",         null),
+    new PinInfoItem("shield",    "VPN & Emulators Not Allowed",null),
+};
+```
+
+## Theme reference
+
+| Token | Value | Used for |
+|-------|-------|----------|
+| Background | `#fafafa` | All dialog backgrounds |
+| Primary button | `#111111` | Get PIN, Verify, CTA, Enter PIN |
+| Primary button ripple | `#333333` | Ripple feedback on solid buttons |
+| Outlined button border | `#dddddd` | Enter PIN button stroke |
+| Ghost button border | `#eeeeee` | Tutorial, Join Us, Close borders |
+| Title text | `#111111` | Dialog and card titles |
+| Body text | `#444444` | Info card row labels |
+| Muted text | `#888888` | Subtitles, Close button labels |
+| Error / Exit | `#ee5555` | Exit button, error messages |
+| Divider | `#f2f2f2` | Horizontal rule in AdDialog |
+| Corner radius (dialogs) | 20dp | `PinVerifyDialog`, `AdDialog` |
+| Corner radius (cards) | 14dp | Info card in `PinVerifyDialog` |
+| Corner radius (link cards) | 12dp | Link cards in `JoinDialog` |
+| Dialog width | 340dp | `PinVerifyDialog`, `AdDialog` |
+| Dialog width | 310dp | `JoinDialog` |

@@ -1,0 +1,90 @@
+---
+title: 'Verify PIN'
+description: 'Validate a PIN entered by the user and mark the device as verified.'
+api: 'POST /api/sdk/verify-pin'
+---
+
+<Note>
+  Requires `x-api-key` header.
+</Note>
+
+Call this endpoint when the user submits a PIN in the verification dialog. The server looks up an unused PIN record matching the `pin` + `deviceId` pair for this API key. On success, it marks the PIN as used, records a `usedAt` timestamp, and sets an `expiresAt` value if the app is configured for duration-based expiry.
+
+If `pinEnabled` is `false` for this app, the server returns `verified: true` immediately without checking any PIN.
+
+If the device is already verified (for example, the user re-opened the app before expiry), the server returns `verified: true` without consuming the PIN.
+
+## Request
+
+### Headers
+
+<ParamField header="x-api-key" type="string" required>
+  Your app API key.
+</ParamField>
+
+### Body
+
+<ParamField body="pin" type="string" required>
+  The 6-digit PIN entered by the user.
+</ParamField>
+
+<ParamField body="deviceId" type="string" required>
+  The Android device identifier. Must match the `deviceId` used when the PIN was generated via the shortener flow.
+</ParamField>
+
+## Response
+
+<ResponseField name="verified" type="boolean">
+  `true` if the PIN was accepted and the device is now unlocked. `false` if the PIN was incorrect or has already been used.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable status message. Examples:
+  - `"PIN verified. App unlocked!"`
+  - `"Already verified"`
+  - `"Invalid PIN"`
+  - `"PIN not required"`
+</ResponseField>
+
+## Error cases
+
+| Condition | `verified` | `message` |
+|-----------|------------|-----------|
+| Correct PIN, first use | `true` | `"PIN verified. App unlocked!"` |
+| Device already has an active PIN | `true` | `"Already verified"` |
+| PIN not found or already used | `false` | `"Invalid PIN"` |
+| `pinEnabled` is `false` | `true` | `"PIN not required"` |
+
+<Warning>
+  The SDK enforces `maxAttempts` on the client side. After the configured number of failed attempts the PIN input is disabled and the user must restart the verification flow. The server does not rate-limit individual PIN attempts.
+</Warning>
+
+<RequestExample>
+
+```bash cURL
+curl --request POST \
+  --url https://your-server.example.com/api/sdk/verify-pin \
+  --header 'x-api-key: YOUR_API_KEY' \
+  --header 'Content-Type: application/json' \
+  --data '{"pin": "483920", "deviceId": "a1b2c3d4e5f6"}'
+```
+
+</RequestExample>
+
+<ResponseExample>
+
+```json 200 — success
+{
+  "verified": true,
+  "message": "PIN verified. App unlocked!"
+}
+```
+
+```json 200 — invalid PIN
+{
+  "verified": false,
+  "message": "Invalid PIN"
+}
+```
+
+</ResponseExample>

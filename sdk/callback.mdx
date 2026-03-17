@@ -1,0 +1,129 @@
+---
+title: "AdVerifyCallback"
+description: "Implement AdVerifyCallback to receive ad lifecycle events from the AdVerify SDK."
+---
+
+`AdVerifyCallback` is the interface you pass to `AdVerify.show()` to receive notifications about what happens during an ad session. All methods are called on the **main thread**.
+
+## Interface definition
+
+```java AdVerifyCallback.java
+package com.adverify.sdk;
+
+/** Callback interface for ad lifecycle events. */
+public interface AdVerifyCallback {
+    void onAdShown();
+    void onAdClosed();
+    void onAdClicked(String redirectUrl);
+    void onError(String message);
+}
+```
+
+## Methods
+
+<ParamField body="onAdShown()">
+  Called immediately after the `AdDialog` is displayed on screen — specifically after `dialog.show()` returns in `AdLoader.showAd()`. Use this to pause any ongoing work in your app (music, timers, etc.) while the ad is visible.
+
+  ```java AdLoader.java
+  dialog.show();
+  if (callback != null) callback.onAdShown();
+  ```
+</ParamField>
+
+<ParamField body="onAdClosed()">
+  Called when the user dismisses the ad dialog — either by tapping the **Close** button or by tapping outside the dialog (the dialog is cancelable). Triggered from the dialog's `OnDismissListener`.
+
+  ```java AdLoader.java
+  @Override
+  public void onClosed() {
+      if (callback != null) callback.onAdClosed();
+  }
+  ```
+
+  Resume any work you paused in `onAdShown()` here.
+</ParamField>
+
+<ParamField body="onAdClicked(String redirectUrl)">
+  Called when the user taps the CTA button on the ad. `redirectUrl` is the URL from the ad configuration on your server. The SDK also opens the URL in the device browser automatically — you do not need to handle the Intent yourself unless you want custom behavior.
+
+  ```java AdLoader.java
+  @Override
+  public void onClicked(String url) {
+      client.trackClick(ad.id);
+      if (callback != null) callback.onAdClicked(url);
+  }
+  ```
+
+  `url` may be an empty string if the ad has no redirect URL configured.
+</ParamField>
+
+<ParamField body="onError(String message)">
+  Called whenever the SDK encounters a non-fatal error that prevents an ad from being shown. This includes network failures, an empty ads list, or the activity being in a finishing state.
+
+  Common `message` values:
+
+  | Message | Cause |
+  |---------|-------|
+  | `"Activity is null or finishing"` | `show()` called after `Activity.finish()` |
+  | `"No ads available"` | Server returned an empty ads array |
+  | `"Max PIN attempts reached"` | User exhausted PIN attempts |
+  | `"HTTP 4xx: ..."` | API key invalid or server error |
+
+  The SDK does **not** throw exceptions for these conditions — they are all surfaced through `onError`.
+</ParamField>
+
+## Example implementation
+
+```java MainActivity.java
+import com.adverify.sdk.AdVerify;
+import com.adverify.sdk.AdVerifyCallback;
+
+public class MainActivity extends AppCompatActivity {
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+        AdVerify.show(this, new AdVerifyCallback() {
+
+            @Override
+            public void onAdShown() {
+                // Ad is now visible — pause background tasks if needed
+            }
+
+            @Override
+            public void onAdClosed() {
+                // User dismissed the ad — resume background tasks
+                proceedToMainContent();
+            }
+
+            @Override
+            public void onAdClicked(String redirectUrl) {
+                // User tapped the CTA button
+                // redirectUrl is already opened in the browser by the SDK
+                Log.d("AdVerify", "Ad clicked: " + redirectUrl);
+            }
+
+            @Override
+            public void onError(String message) {
+                // Ad could not be shown — proceed normally
+                Log.w("AdVerify", "Ad error: " + message);
+                proceedToMainContent();
+            }
+        });
+    }
+
+    private void proceedToMainContent() {
+        // Continue with your app flow
+    }
+}
+```
+
+<Tip>
+  If you are using the `start()` method for MT Manager injection, there is no way to attach a callback — `start()` always passes `null` internally. Use `AdVerify.show(activity, callback)` if you need lifecycle events.
+</Tip>
+
+## Callback delivery
+
+All callback methods are posted to the main (UI) thread via `Handler(Looper.getMainLooper())` inside `AdClient`. You can safely update UI elements directly inside any callback method.

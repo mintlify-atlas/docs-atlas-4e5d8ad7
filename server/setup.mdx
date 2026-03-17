@@ -1,0 +1,168 @@
+---
+title: "Server setup"
+description: "Install and run the AdVerify Express server with PostgreSQL and Prisma."
+---
+
+The AdVerify server is an Express.js application written in TypeScript. It exposes the SDK API consumed by Android apps and the admin API used by the dashboard.
+
+## Prerequisites
+
+- **Node.js** 18+ (or [Bun](https://bun.sh) 1.0+)
+- **PostgreSQL** 14+ running and accessible
+- A PostgreSQL database created for AdVerify
+
+## Setup
+
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/yashmakhija/AdVerifySDK.git
+    cd AdVerifySDK/server
+    ```
+  </Step>
+
+  <Step title="Install dependencies">
+    <CodeGroup>
+
+    ```bash bun
+    bun install
+    ```
+
+    ```bash npm
+    npm install
+    ```
+
+    </CodeGroup>
+  </Step>
+
+  <Step title="Configure environment variables">
+    Create a `.env` file in the `server/` directory:
+
+    ```bash .env
+    DATABASE_URL="postgresql://user:password@localhost:5432/adverify"
+    PORT=3042
+    ADMIN_USERNAME=admin
+    ADMIN_PASSWORD=your-secure-password
+    FRONTEND_URL=http://localhost:3000
+    ALLOWED_ORIGINS=http://localhost:3000
+    BASE_URL=https://ads.paidappstore.com
+    SHORTENER_SECRET=change-me-in-production
+    SHORTENER_API_URL=https://api.paidappstore.com
+    SHORTENER_FRONTEND_URL=https://paidappstore.com
+    ```
+
+    <Warning>
+      Change `ADMIN_PASSWORD` and `SHORTENER_SECRET` before deploying to production. The defaults are insecure.
+    </Warning>
+  </Step>
+
+  <Step title="Apply the database schema">
+    Push the Prisma schema to your PostgreSQL database:
+
+    <CodeGroup>
+
+    ```bash bun
+    bun run db:push
+    ```
+
+    ```bash npm
+    npm run db:push
+    ```
+
+    </CodeGroup>
+
+    This runs `prisma db push` and creates all tables without generating a migration history.
+  </Step>
+
+  <Step title="Seed the database (optional)">
+    Populate the database with a demo API key and a sample ad:
+
+    <CodeGroup>
+
+    ```bash bun
+    bun run db:seed
+    ```
+
+    ```bash npm
+    npm run db:seed
+    ```
+
+    </CodeGroup>
+
+    The seed script creates:
+    - An API key for **Demo App** (`com.adverify.demo`)
+    - A PIN config with PIN disabled
+    - A sample interstitial ad
+
+    The generated API key is printed to the console on completion.
+  </Step>
+
+  <Step title="Start the development server">
+    <CodeGroup>
+
+    ```bash bun
+    bun dev
+    ```
+
+    ```bash npm
+    npm run dev
+    ```
+
+    </CodeGroup>
+
+    The server starts on `http://localhost:3042` (or the port set in `PORT`). The `dev` script uses `tsx watch` for hot-reloading on file changes.
+  </Step>
+</Steps>
+
+## Production build
+
+Compile TypeScript to JavaScript and start the compiled output:
+
+<CodeGroup>
+
+```bash bun
+bun run build
+bun start
+```
+
+```bash npm
+npm run build
+npm start
+```
+
+</CodeGroup>
+
+The `build` script runs `tsc` and outputs compiled files to `dist/`. The `start` script runs `node dist/app.js`.
+
+<Tip>
+  In production, run the server behind a reverse proxy such as nginx or Caddy to handle TLS termination.
+</Tip>
+
+## Verify the server is running
+
+Send a request to the root endpoint:
+
+```bash
+curl http://localhost:3042/
+```
+
+Expected response:
+
+```json
+{
+  "status": "ok",
+  "uptime": 1.23,
+  "timestamp": "2026-01-01T00:00:00.000Z"
+}
+```
+
+## Available scripts
+
+| Script | Command | Description |
+|--------|---------|-------------|
+| `dev` | `tsx watch src/app.ts` | Start dev server with hot reload |
+| `build` | `tsc` | Compile TypeScript to `dist/` |
+| `start` | `node dist/app.js` | Run compiled production build |
+| `db:push` | `prisma db push` | Apply schema to database |
+| `db:seed` | `tsx prisma/seed.ts` | Seed demo data |
+| `db:studio` | `prisma studio` | Open Prisma Studio GUI |

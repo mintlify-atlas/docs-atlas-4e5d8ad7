@@ -1,0 +1,79 @@
+---
+title: 'API keys'
+description: 'Create and manage API keys for your Android apps. Each key scopes ads, PIN configuration, and device records to a single app.'
+---
+
+Every Android app that integrates the AdVerify SDK needs its own API key. The key is sent with every SDK request in the `x-api-key` header and ties impressions, clicks, PINs, and configuration to that specific app.
+
+Deleting a key permanently removes all associated ads, impressions, clicks, PIN configuration, and user PIN records via cascading database deletes.
+
+<Warning>
+Deleting an API key is irreversible. All ads, impression and click history, PIN configuration, and user PIN records scoped to that key are permanently deleted.
+</Warning>
+
+## Key format
+
+Keys are generated as 32-character lowercase hexadecimal strings using `crypto.randomBytes(16).toString('hex')`. Example:
+
+```
+a3f8c2d1e4b07591f62843a09d5e7c30
+```
+
+Pass the key in the SDK or any direct API call:
+
+```http
+x-api-key: a3f8c2d1e4b07591f62843a09d5e7c30
+```
+
+## Creating your first key
+
+<Steps>
+  <Step title="Open the Keys page">
+    Navigate to **API Keys** in the sidebar.
+  </Step>
+  <Step title="Click New Key">
+    Click the **New Key** button in the top-right corner. A modal dialog opens.
+  </Step>
+  <Step title="Fill in the form">
+    Enter an **App Name** (required) and an optional **Package Name**.
+
+    | Field | Required | Description |
+    |-------|----------|-------------|
+    | `appName` | Yes | Human-readable name shown in the dashboard (e.g. `"OTT Mods"`) |
+    | `packageName` | No | Android package identifier (e.g. `"com.example.app"`). Used for reference only. |
+  </Step>
+  <Step title="Submit">
+    Click **Create Key**. The server generates the key and a default `PinConfig` record is created automatically alongside it.
+  </Step>
+  <Step title="Copy the key">
+    Click the key value in the table to copy it to your clipboard. Paste it into your Android project as the value passed to `AdVerify.init()`.
+  </Step>
+</Steps>
+
+## Listing keys
+
+The keys table shows all API keys ordered by creation date (newest first). Each row displays:
+
+| Column | Description |
+|--------|-------------|
+| App | The `appName` value |
+| Package | The `packageName` value, or `—` if empty |
+| API Key | The key value — click to copy |
+| Status | **Active** (green) or **Inactive** (red) based on `isActive` |
+
+## Enabling and disabling a key
+
+Click **Disable** or **Enable** next to a key to toggle its `isActive` flag. When `isActive` is `false`, all SDK requests using that key are rejected with an error response.
+
+<Tip>
+Disabling a key is a safe way to pause an app without losing any configuration or historical data.
+</Tip>
+
+## Deleting a key
+
+Click **Delete** on a key row and confirm the prompt. The server calls `DELETE /admin/keys/:id`, which triggers a cascade delete on all related records:
+
+- All `Ad` records for the key
+- All `Impression` and `Click` records for the key
+- The `PinConfig` record for the key
+- All `UserPin` records for the key

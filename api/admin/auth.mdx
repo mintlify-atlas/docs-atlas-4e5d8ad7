@@ -1,0 +1,80 @@
+---
+title: 'Authentication'
+description: 'How to authenticate with the AdVerify admin API.'
+---
+
+All admin endpoints are protected with HTTP Basic Authentication. The server validates the provided credentials against the `ADMIN_USERNAME` and `ADMIN_PASSWORD` environment variables.
+
+## How it works
+
+Every request to an admin endpoint must include an `Authorization` header using the `Basic` scheme. Encode your credentials as `username:password` in Base64 and prefix with `Basic `.
+
+```
+Authorization: Basic <base64(ADMIN_USERNAME:ADMIN_PASSWORD)>
+```
+
+For example, if your username is `admin` and your password is `secret`:
+
+```bash
+echo -n 'admin:secret' | base64
+# -> YWRtaW46c2VjcmV0
+```
+
+Then set the header:
+
+```
+Authorization: Basic YWRtaW46c2VjcmV0
+```
+
+---
+
+## GET /api/admin/me
+
+Verify that the provided credentials are valid. Returns the authenticated username.
+
+### Response fields
+
+<ResponseField name="authenticated" type="boolean" required>
+  Always `true` when credentials are valid.
+</ResponseField>
+
+<ResponseField name="username" type="string" required>
+  The admin username from the server environment.
+</ResponseField>
+
+### Example
+
+```bash
+curl --request GET \
+  --url https://your-server.example.com/api/admin/me \
+  --header 'Authorization: Basic YWRtaW46c2VjcmV0'
+```
+
+```json
+{
+  "authenticated": true,
+  "username": "admin"
+}
+```
+
+---
+
+## Error responses
+
+When the `Authorization` header is missing or not prefixed with `Basic `:
+
+```json
+// 401 Unauthorized
+{
+  "error": "Admin authentication required"
+}
+```
+
+When the decoded credentials do not match `ADMIN_USERNAME` / `ADMIN_PASSWORD`:
+
+```json
+// 403 Forbidden
+{
+  "error": "Invalid admin credentials"
+}
+```

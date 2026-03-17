@@ -1,0 +1,134 @@
+---
+title: "Installation"
+description: "Add the AdVerify SDK to your Android project — either as an Android Studio module or as a DEX file for MT Manager."
+---
+
+The `adverify` module is a pure Android library with **zero external dependencies**. It compiles against the standard Android framework APIs only, which means it works equally well as a Gradle module or as an injected DEX file.
+
+<Note>
+  Minimum API level is **21** (Android 5.0 Lollipop). The `compileSdk` and `targetSdk` are set to **34**.
+</Note>
+
+<Tabs>
+  <Tab title="Android Studio">
+    ### Copy the module
+
+    <Steps>
+      <Step title="Copy the adverify directory">
+        Copy the entire `adverify/` directory from the SDK source into the root of your Android project:
+
+        ```
+        your-app/
+        ├── app/
+        ├── adverify/          ← paste here
+        └── settings.gradle
+        ```
+      </Step>
+
+      <Step title="Include the module in settings.gradle">
+        Open `settings.gradle` (or `settings.gradle.kts`) and add the module:
+
+        ```groovy settings.gradle
+        include ':app'
+        include ':adverify'
+        ```
+      </Step>
+
+      <Step title="Add the dependency in app/build.gradle">
+        In your app module's `build.gradle`, add the `adverify` module as a dependency:
+
+        ```groovy app/build.gradle
+        dependencies {
+            implementation project(':adverify')
+        }
+        ```
+      </Step>
+
+      <Step title="Add the INTERNET permission">
+        The SDK makes HTTP requests to the AdVerify server. Add the permission to your `AndroidManifest.xml` if it isn't already present:
+
+        ```xml AndroidManifest.xml
+        <uses-permission android:name="android.permission.INTERNET" />
+        ```
+
+        If your server uses HTTP (not HTTPS), also set `usesCleartextTraffic` on the `<application>` tag:
+
+        ```xml AndroidManifest.xml
+        <application
+            android:usesCleartextTraffic="true"
+            ... >
+        ```
+      </Step>
+
+      <Step title="Add meta-data to AndroidManifest.xml">
+        The `start(Activity)` variant (used by MT Manager and Application-less setups) reads credentials from manifest meta-data. Add them inside the `<application>` tag:
+
+        ```xml AndroidManifest.xml
+        <application ...>
+
+            <meta-data
+                android:name="adverify.api_key"
+                android:value="YOUR_API_KEY" />
+
+            <meta-data
+                android:name="adverify.base_url"
+                android:value="https://your-server.com" />
+
+        </application>
+        ```
+
+        | Key | Description |
+        |-----|-------------|
+        | `adverify.api_key` | Your API key from the admin dashboard |
+        | `adverify.base_url` | Base URL of your AdVerify server (no trailing slash) |
+
+        <Tip>
+          If you call `AdVerify.init()` manually in your `Application` class you can skip the meta-data — the values passed to `init()` take precedence.
+        </Tip>
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="MT Manager (DEX)">
+    ### Use the prebuilt DEX
+
+    For patching apps with MT Manager you use a prebuilt `adverify.dex` instead of a Gradle module. See [MT Manager / Smali Injection](/sdk/mt-manager) for the full workflow.
+
+    <Steps>
+      <Step title="Build the DEX">
+        Run the build script from the `android-sdk/` directory:
+
+        ```bash
+        chmod +x build-dex.sh
+        ./build-dex.sh
+        ```
+
+        The output is `out/adverify.dex`. The script requires **Android SDK Platform 34** and **Build-Tools 34** installed.
+      </Step>
+
+      <Step title="Import into MT Manager">
+        Open the target APK in MT Manager, then use **Dex Editor** to add `adverify.dex` as an additional dex file (e.g. `classes2.dex`).
+      </Step>
+
+      <Step title="Add permissions and meta-data">
+        Edit `AndroidManifest.xml` inside the APK to add the `INTERNET` permission and the `adverify.api_key` / `adverify.base_url` meta-data entries shown in the Android Studio tab above.
+      </Step>
+
+      <Step title="Inject the smali hook">
+        Add the smali hook to the launcher `Activity`'s `onCreate()` method. See [MT Manager / Smali Injection](/sdk/mt-manager) for the exact lines.
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+## Dependency footprint
+
+The `adverify` module has an empty `dependencies {}` block in its `build.gradle` by design:
+
+```groovy adverify/build.gradle
+// No external dependencies — pure Android framework APIs only.
+// This ensures the SDK works when added as a DEX via MT Manager.
+dependencies {}
+```
+
+All networking uses `HttpURLConnection`, all UI is built programmatically with `Canvas`, `Paint`, and `GradientDrawable` — no third-party libraries are required or included.

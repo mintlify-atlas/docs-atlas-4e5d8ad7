@@ -1,0 +1,103 @@
+---
+title: 'User PINs'
+description: 'View verified devices, inspect PIN status, expire PINs early, and revoke device access.'
+---
+
+A user PIN record is created for each unique device–app combination the first time a device completes the PIN acquisition flow. The PIN is bound to the device's Android ID (`deviceId`) and scoped to a specific API key.
+
+Navigate to **User PINs** in the sidebar to view and manage PIN records.
+
+## PIN record fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | number | Auto-incrementing record ID |
+| `apiKeyId` | number | ID of the API key (app) this PIN belongs to |
+| `deviceId` | string | Android ID of the device |
+| `pin` | string | The numeric PIN value |
+| `isUsed` | boolean | `true` once the user has successfully verified the PIN |
+| `createdAt` | datetime | When the PIN was generated |
+| `usedAt` | datetime \| null | When the PIN was first verified |
+| `expiresAt` | datetime \| null | Expiry timestamp; `null` means the PIN never expires |
+
+### PIN status
+
+| Status | Condition |
+|--------|----------|
+| **Pending** | `isUsed` is `false` — the PIN was generated but not yet entered by the user |
+| **Active** | `isUsed` is `true` and `expiresAt` is `null` or in the future |
+| **Expired** | `isUsed` is `true` and `expiresAt` is in the past |
+
+## PIN stats
+
+The stats panel at the top of the User PINs page is populated by `GET /admin/user-pins/stats`. You can filter stats to a specific date using the date picker.
+
+| Stat | Description |
+|------|-------------|
+| `todayGenerated` | PINs created on the selected date |
+| `todayUsed` | PINs verified on the selected date |
+| `yesterdayGenerated` | PINs created the day before the selected date |
+| `yesterdayUsed` | PINs verified the day before the selected date |
+| `totalActive` | All verified PINs that have not yet expired |
+| `totalExpired` | All verified PINs whose `expiresAt` is in the past |
+
+<Note>
+The stats endpoint accepts an optional `?date=YYYY-MM-DD` query parameter. Omitting it defaults to today.
+</Note>
+
+## Filtering the PIN list
+
+The pin list (`GET /admin/user-pins`) returns up to 100 records ordered by `createdAt` descending. You can filter in the dashboard by:
+
+- **App** — select a specific API key from the dropdown to pass `?apiKeyId=<id>` to the endpoint
+- **Date** — use the date picker to narrow the list to PINs created on a specific day (client-side filter)
+
+## Actions
+
+### Expire a PIN early
+
+For any PIN with **Active** status, click **Expire**. The server calls `POST /admin/user-pins/:id/expire`, which sets `expiresAt` and `usedAt` to the current timestamp and marks `isUsed` as `true`. On the next SDK `init` call from that device, the expired PIN is detected and the user sees the verification dialog again.
+
+### Revoke a device
+
+Click **Revoke** on any row to remove all PIN records for that `deviceId` and `apiKeyId` combination. The server calls `POST /admin/user-pins/revoke` with the following body:
+
+```json
+{
+  "apiKeyId": 1,
+  "deviceId": "abc123def456"
+}
+```
+
+This permanently deletes every `UserPin` record matching that device and app. The device will be required to go through the full PIN verification flow again.
+
+<Warning>
+Revoking a device deletes all PIN records for that device–app pair. This cannot be undone.
+</Warning>
+
+### Delete a PIN record
+
+To remove a single PIN entry without revoking all records for a device, use the API directly:
+
+```http
+DELETE /admin/user-pins/:id
+Authorization: <ADMIN_TOKEN>
+```
+
+This is useful for cleaning up stale **Pending** PINs that were never used.
+
+## Global unlock mode
+
+The **Settings** page controls `pinUnlockMode` in the `GlobalSettings` record. This setting determines whether a PIN verified in one app counts as verified in other apps.
+
+| Mode | Behavior |
+|------|----------|
+| `per_app` | Default. Each app requires its own PIN verification. |
+| `global` | A PIN verified in any app satisfies verification for all apps. |
+| `global_except` | Global unlock applies to all apps except those listed in `excludedAppIds`. |
+
+`excludedAppIds` is an array of API key IDs. Apps in this list always require their own PIN verification regardless of the global mode.
+
+<Tip>
+Use `global` mode when you operate multiple apps under the same user base and want a single verification to cover all of them.
+</Tip>

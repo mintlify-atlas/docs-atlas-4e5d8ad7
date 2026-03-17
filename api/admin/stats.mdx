@@ -1,0 +1,70 @@
+---
+title: 'Dashboard Stats'
+description: 'Retrieve aggregated statistics for the AdVerify dashboard.'
+---
+
+## GET /api/admin/stats
+
+Returns a snapshot of key metrics across all API keys, ads, impressions, clicks, and PINs.
+
+**Authentication required.** See [Authentication](/api/admin/auth).
+
+### Response fields
+
+<ResponseField name="totalKeys" type="number" required>
+  Total number of API keys in the database.
+</ResponseField>
+
+<ResponseField name="totalAds" type="number" required>
+  Total number of ads across all API keys.
+</ResponseField>
+
+<ResponseField name="totalImpressions" type="number" required>
+  Cumulative impression count across all ads and API keys.
+</ResponseField>
+
+<ResponseField name="totalClicks" type="number" required>
+  Cumulative click count across all ads and API keys.
+</ResponseField>
+
+<ResponseField name="todayImpressions" type="number" required>
+  Impressions recorded since midnight (server local time) today.
+</ResponseField>
+
+<ResponseField name="todayClicks" type="number" required>
+  Clicks recorded since midnight (server local time) today.
+</ResponseField>
+
+<ResponseField name="ctr" type="string" required>
+  Overall click-through rate as a percentage string rounded to two decimal places (e.g. `"4.27"`). Returns `"0.00"` when there are no impressions.
+</ResponseField>
+
+<ResponseField name="totalPins" type="number" required>
+  Total number of user PIN records in the database.
+</ResponseField>
+
+<ResponseField name="usedPins" type="number" required>
+  Number of PIN records where `isUsed` is `true`.
+</ResponseField>
+
+### Example
+
+```bash
+curl --request GET \
+  --url https://your-server.example.com/api/admin/stats \
+  --header 'Authorization: Basic YWRtaW46c2VjcmV0'
+```
+
+```json
+{
+  "totalKeys": 5,
+  "totalAds": 12,
+  "totalImpressions": 8402,
+  "totalClicks": 359,
+  "todayImpressions": 214,
+  "todayClicks": 9,
+  "ctr": "4.27",
+  "totalPins": 1030,
+  "usedPins": 874
+}
+```

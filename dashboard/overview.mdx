@@ -1,0 +1,67 @@
+---
+title: 'Dashboard overview'
+description: 'A tour of the AdVerify admin panel: stats, ad management, PIN configuration, key management, and device management.'
+---
+
+The admin dashboard is a Next.js web application that gives you full control over every aspect of the AdVerify platform. From a single panel you can monitor platform-wide statistics, create and manage ads, configure PIN verification per app, and inspect device activity.
+
+## Accessing the dashboard
+
+The dashboard is served by the Next.js frontend. After deploying the server and web app, open the host you configured in your browser. You will be prompted to log in with your `ADMIN_USERNAME` and `ADMIN_TOKEN` credentials set in the server environment.
+
+<Note>
+All admin API calls made by the dashboard include an `Authorization` header containing your `ADMIN_TOKEN`. Keep this token secret and rotate it if it is ever exposed.
+</Note>
+
+## Platform stats
+
+The **Dashboard** page (`/dashboard`) shows a live snapshot of your platform drawn from two endpoints:
+
+- `GET /admin/stats` — aggregate ad and key metrics
+- `GET /admin/user-pins/stats` — PIN activity for today and yesterday
+
+### Ad & key stats
+
+| Stat | Description |
+|------|-------------|
+| `totalKeys` | Number of API keys created |
+| `totalAds` | Total ads across all apps |
+| `totalImpressions` | All-time ad impressions |
+| `todayImpressions` | Impressions recorded since midnight |
+| `totalClicks` | All-time ad clicks |
+| `todayClicks` | Clicks recorded since midnight |
+| `ctr` | Click-through rate (`totalClicks / totalImpressions × 100`) |
+| `totalPins` | Total user PIN records |
+| `usedPins` | PINs that have been verified at least once |
+
+### PIN analytics
+
+| Stat | Description |
+|------|-------------|
+| `todayGenerated` | PINs created today |
+| `todayUsed` | PINs verified today |
+| `yesterdayGenerated` | PINs created yesterday |
+| `yesterdayUsed` | PINs verified yesterday |
+| `totalActive` | Verified PINs that have not expired |
+| `totalExpired` | Verified PINs whose `expiresAt` is in the past |
+
+## Navigation sections
+
+<Columns cols={2}>
+  <Card title="API Keys" icon="key" href="/dashboard/api-keys">
+    Create and manage API keys — one per app. Each key gates access to the SDK endpoints.
+  </Card>
+  <Card title="Ad Management" icon="megaphone" href="/dashboard/ads">
+    Create interstitial, banner, and dialog ads. Set priority, enable/disable, and view per-ad impression and click counts.
+  </Card>
+  <Card title="PIN Configuration" icon="shield" href="/dashboard/pin-config">
+    Configure PIN verification per app: enable/disable, expiry mode, button text, info cards, and community join links.
+  </Card>
+  <Card title="User PINs" icon="lock" href="/dashboard/user-pins">
+    View verified devices, inspect PIN status, expire individual PINs early, and revoke device access.
+  </Card>
+</Columns>
+
+## Settings
+
+The **Settings** page (`/settings`) controls the global unlock mode, which determines whether a PIN verified in one app can satisfy verification requirements in other apps. See [User PINs](/dashboard/user-pins) for details on the available modes.

@@ -1,0 +1,63 @@
+---
+title: 'Track Impression'
+description: 'Record that an ad was displayed to the user.'
+api: 'POST /api/sdk/impression'
+---
+
+<Note>
+  Requires `x-api-key` header.
+</Note>
+
+Call this endpoint as soon as the `AdDialog` becomes visible. The server creates an `Impression` record in the database tied to the ad, the API key, and optionally the device. Impression data is available in the admin dashboard for analytics.
+
+## When to call
+
+The Android SDK calls this endpoint from `AdDialog.show()` immediately after the dialog is displayed to the user. Call it once per dialog display, not once per ad in the list.
+
+## Request
+
+### Headers
+
+<ParamField header="x-api-key" type="string" required>
+  Your app API key.
+</ParamField>
+
+### Body
+
+<ParamField body="adId" type="number" required>
+  The `id` of the ad that was displayed. Use the value returned by `/api/sdk/ads`.
+</ParamField>
+
+<ParamField body="deviceId" type="string">
+  The Android device identifier. Recommended for accurate per-device analytics, but optional.
+</ParamField>
+
+## Response
+
+Returns HTTP `200` with a status confirmation object.
+
+<ResponseField name="status" type="string">
+  Always `"ok"` on success.
+</ResponseField>
+
+<RequestExample>
+
+```bash cURL
+curl --request POST \
+  --url https://your-server.example.com/api/sdk/impression \
+  --header 'x-api-key: YOUR_API_KEY' \
+  --header 'Content-Type: application/json' \
+  --data '{"adId": 42, "deviceId": "a1b2c3d4e5f6"}'
+```
+
+</RequestExample>
+
+<ResponseExample>
+
+```json 200
+{
+  "status": "ok"
+}
+```
+
+</ResponseExample>

@@ -1,0 +1,101 @@
+---
+title: 'Fetch Ads'
+description: 'Retrieve the list of active ads configured for your app, ordered by priority.'
+api: 'GET /api/sdk/ads'
+---
+
+<Note>
+  Requires `x-api-key` header.
+</Note>
+
+Call this endpoint after a successful `/init` response (once PIN verification is satisfied or not required). The server returns all active ads for the API key, sorted by `priority` descending so the highest-priority ad is first. The SDK uses this list to populate the `AdDialog`.
+
+## Request
+
+### Headers
+
+<ParamField header="x-api-key" type="string" required>
+  Your app API key.
+</ParamField>
+
+This endpoint has no request body.
+
+## Response
+
+<ResponseField name="ads" type="object[]">
+  Array of ad objects. Empty array if no active ads are configured.
+
+  <Expandable title="properties">
+    <ResponseField name="id" type="number">
+      Unique ad identifier. Pass this value to `/impression` and `/click`.
+    </ResponseField>
+    <ResponseField name="title" type="string">
+      Ad headline shown in the dialog.
+    </ResponseField>
+    <ResponseField name="description" type="string">
+      Supporting text below the title.
+    </ResponseField>
+    <ResponseField name="imageUrl" type="string">
+      URL of the ad's background image. The SDK loads this via `HttpURLConnection` on a background thread.
+    </ResponseField>
+    <ResponseField name="redirectUrl" type="string">
+      URL opened in the browser when the user taps the action button.
+    </ResponseField>
+    <ResponseField name="adType" type="string">
+      Format of the ad. Currently `"interstitial"`.
+    </ResponseField>
+    <ResponseField name="buttonText" type="string">
+      Label for the ad's action button. Default: `"Visit Now"`.
+    </ResponseField>
+    <ResponseField name="priority" type="number">
+      Display order weight. Higher values appear first. Default: `0`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<RequestExample>
+
+```bash cURL
+curl --request GET \
+  --url https://your-server.example.com/api/sdk/ads \
+  --header 'x-api-key: YOUR_API_KEY'
+```
+
+</RequestExample>
+
+<ResponseExample>
+
+```json 200
+{
+  "ads": [
+    {
+      "id": 42,
+      "title": "Download SuperVPN",
+      "description": "Fast, secure, and free VPN for Android.",
+      "imageUrl": "https://cdn.example.com/ads/supervpn.jpg",
+      "redirectUrl": "https://play.google.com/store/apps/details?id=com.supervpn",
+      "adType": "interstitial",
+      "buttonText": "Install Now",
+      "priority": 10
+    },
+    {
+      "id": 37,
+      "title": "Try ProxyDroid",
+      "description": "Route all your traffic through a proxy.",
+      "imageUrl": "https://cdn.example.com/ads/proxydroid.jpg",
+      "redirectUrl": "https://play.google.com/store/apps/details?id=org.proxydroid",
+      "adType": "interstitial",
+      "buttonText": "Visit Now",
+      "priority": 5
+    }
+  ]
+}
+```
+
+```json 200 — no ads configured
+{
+  "ads": []
+}
+```
+
+</ResponseExample>

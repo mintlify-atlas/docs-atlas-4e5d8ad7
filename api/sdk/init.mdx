@@ -1,0 +1,159 @@
+---
+title: 'Initialize SDK'
+description: 'Bootstrap the SDK for a device and retrieve PIN verification state, ad configuration, and app branding.'
+api: 'POST /api/sdk/init'
+---
+
+<Note>
+  Requires `x-api-key` header. Pass your app's API key on every request.
+</Note>
+
+Call this endpoint at app launch before showing any UI. The server checks whether the device's PIN has expired, deletes stale PIN records if needed, and returns the full configuration the SDK needs to decide its next step:
+
+- If `pinEnabled` is `false` or `pinVerified` is `true`, proceed to fetch and display ads.
+- If `pinEnabled` is `true` and `pinVerified` is `false`, show the PIN verification dialog.
+
+## Request
+
+### Headers
+
+<ParamField header="x-api-key" type="string" required>
+  Your app API key. Identifies which app's configuration to load.
+</ParamField>
+
+### Body
+
+<ParamField body="deviceId" type="string">
+  The Android device identifier (e.g. `Settings.Secure.ANDROID_ID`). Used to look up an existing verified PIN for this specific device. Omitting this field causes the server to treat the device as unverified.
+</ParamField>
+
+## Response
+
+<ResponseField name="appName" type="string">
+  Display name of the app as configured in the admin panel.
+</ResponseField>
+
+<ResponseField name="pinEnabled" type="boolean">
+  Whether PIN verification is required before the user can access the app.
+</ResponseField>
+
+<ResponseField name="pinVerified" type="boolean">
+  Whether this device already has a valid, non-expired PIN. When `true`, skip the PIN dialog.
+</ResponseField>
+
+<ResponseField name="pinMessage" type="string">
+  Message shown in the PIN verification dialog header. For example: `"Verify your device to continue"`.
+</ResponseField>
+
+<ResponseField name="maxAttempts" type="number">
+  Maximum number of incorrect PIN attempts allowed before the input is locked. Default: `3`.
+</ResponseField>
+
+<ResponseField name="getPinBtnText" type="string">
+  Label for the button that opens the shortener verification flow. Default: `"Get PIN"`.
+</ResponseField>
+
+<ResponseField name="enterPinBtnText" type="string">
+  Label for the button that switches the dialog to PIN entry state. Default: `"Enter PIN"`.
+</ResponseField>
+
+<ResponseField name="tutorialUrl" type="string">
+  URL opened when the user taps the tutorial button in the PIN dialog.
+</ResponseField>
+
+<ResponseField name="pinInfoItems" type="object[]">
+  List of informational items rendered as an icon + text card in the PIN dialog. Falls back to a default set of five items if not configured in the admin panel.
+
+  <Expandable title="properties">
+    <ResponseField name="icon" type="string">
+      Icon identifier. Rendered by the Android SDK using Canvas. Supported values: `device`, `info`, `clock`, `hourglass`, `key`, `sparkle`, `star`, `crown`, `warning`, `shield-x`.
+    </ResponseField>
+    <ResponseField name="text" type="string">
+      Text label displayed next to the icon.
+    </ResponseField>
+    <ResponseField name="color" type="string">
+      Hex color code for the icon dot. For example: `"#3b82f6"`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="joinLinks" type="object[]">
+  Community links shown in the Join dialog. Falls back to default Telegram channel links if not configured.
+
+  <Expandable title="properties">
+    <ResponseField name="name" type="string">
+      Display name for the link. For example: `"Public Channel"`.
+    </ResponseField>
+    <ResponseField name="description" type="string">
+      Short description shown below the name. For example: `"Apps, APKs & Mods"`.
+    </ResponseField>
+    <ResponseField name="url" type="string">
+      Destination URL opened when the user taps the link.
+    </ResponseField>
+    <ResponseField name="iconType" type="string">
+      Icon style to render for this link. Values: `"telegram"` (paper plane), `"channel"` (megaphone).
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## PIN expiry behavior
+
+The server evaluates expiry on every `/init` call according to the global `pinUnlockMode` setting:
+
+| Mode | Behavior |
+|------|-----------|
+| `per_app` | Only checks PINs belonging to this app. |
+| `global` | Returns `pinVerified: true` if the device has a valid PIN on **any** app. |
+| `global_except` | Uses global mode unless this app is in the excluded list, in which case it checks only its own PINs. |
+
+When `expiryMode` is `duration`, the server compares the current time to the PIN's `expiresAt` timestamp. Expired PINs are deleted from the database and `pinVerified` is returned as `false`.
+
+<RequestExample>
+
+```bash cURL
+curl --request POST \
+  --url https://your-server.example.com/api/sdk/init \
+  --header 'x-api-key: YOUR_API_KEY' \
+  --header 'Content-Type: application/json' \
+  --data '{"deviceId": "a1b2c3d4e5f6"}'
+```
+
+</RequestExample>
+
+<ResponseExample>
+
+```json 200
+{
+  "appName": "MyApp",
+  "pinEnabled": true,
+  "pinVerified": false,
+  "pinMessage": "Verify your device to continue",
+  "maxAttempts": 5,
+  "getPinBtnText": "Generate PIN & Verify",
+  "enterPinBtnText": "Enter PIN",
+  "tutorialUrl": "https://t.me/EllieTutorials/36",
+  "pinInfoItems": [
+    { "icon": "device", "text": "Device Not Registered", "color": "#3b82f6" },
+    { "icon": "hourglass", "text": "Access Duration: 24 Hours", "color": "#22c55e" },
+    { "icon": "key", "text": "Automatic Password System", "color": "#8b5cf6" },
+    { "icon": "crown", "text": "Premium Users Only", "color": "#eab308" },
+    { "icon": "shield", "text": "VPN & Emulators Not Allowed", "color": "#ef4444" }
+  ],
+  "joinLinks": [
+    {
+      "name": "Public Channel",
+      "description": "Apps, APKs & Mods",
+      "url": "https://t.me/Android_apps_apks_mod",
+      "iconType": "channel"
+    },
+    {
+      "name": "Private Channel",
+      "description": "Exclusive Content",
+      "url": "https://t.me/+PXcn1RVLom0xMzU1",
+      "iconType": "telegram"
+    }
+  ]
+}
+```
+
+</ResponseExample>
